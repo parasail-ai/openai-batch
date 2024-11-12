@@ -8,7 +8,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-all = [
+test = [
     "black",
     "pytest",
 ]

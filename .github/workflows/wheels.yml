@@ -1,0 +1,50 @@
+name: wheels
+
+on:
+  workflow_dispatch:
+    inputs:
+      # Manual dispatch allows optional upload of wheels to PyPI
+      upload_dest:
+        type: choice
+        description: Upload wheels to
+        options:
+          - No Upload
+          - PyPI
+          - Test PyPI
+  release:
+    types:
+      - published
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # For PyPI Trusted Publisher
+  id-token: write
+
+jobs:
+  publish_PyPI:
+    name: Publish to PyPI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: pipx run build
+
+      - name: Check
+        run: pipx run twine check dist/*
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        name: Upload to PyPI
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_dest == 'PyPI')
+        with:
+          verbose: true
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        name: Upload to Test PyPI
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.upload_dest == 'Test PyPI'
+        with:
+          verbose: true
+          repository-url: https://test.pypi.org/legacy/
