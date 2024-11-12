@@ -1,0 +1,21 @@
+[project]
+name = "openai-batch"
+description = "Make the OpenAI batch protocol easy to use."
+version = "0.1"
+requires-python = ">=3.8"
+dependencies = [
+    "openai",
+]
+
+[project.optional-dependencies]
+all = [
+    "black",
+    "pytest",
+]
+
+[tool.setuptools]
+py-modules = []
+
+[tool.black]
+line-length = 100
+target-version = ['py38']
