@@ -17,12 +17,20 @@ class Provider:
     batch_input_max_requests: int = 50_000
     batch_input_max_bytes: int = 100 * 1024 * 1024
 
+    default_chat_model: str = "meta-llama/Meta-Llama-3-8B-Instruct"
+    default_embedding_model: str = "intfloat/e5-mistral-7b-instruct"
+
+    def __str__(self):
+        return self.display_name or self.name or self.base_url
+
 
 openai_provider = Provider(
     name="openai",
     display_name="OpenAI",
     base_url="https://api.openai.com/v1",
     api_key_env_var="OPENAI_API_KEY",
+    default_chat_model="gpt-4o-mini",
+    default_embedding_model="text-embedding-3-small",
 )
 
 
@@ -31,6 +39,8 @@ parasail_provider = Provider(
     display_name="Parasail",
     base_url="https://api.saas.parasail.io/v1",
     api_key_env_var="PARASAIL_API_KEY",
+    default_chat_model="meta-llama/Meta-Llama-3-8B-Instruct",
+    default_embedding_model="intfloat/e5-mistral-7b-instruct",
 )
 
 all_providers = [openai_provider, parasail_provider]
@@ -74,12 +84,6 @@ def _get_provider(args: Namespace) -> Provider:
 
     if "base_url" in args and args.base_url:
         provider = dataclasses.replace(provider, base_url=args.base_url)
-
-        if not provider.name:
-            provider.name = args.base_url
-
-        if not provider.display_name:
-            provider.display_name = args.base_url
 
     # find API key
     if "api_key" in args and args.api_key:
