@@ -46,9 +46,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 
-[tool.setuptools]
-py-modules = []
-
 [tool.black]
 line-length = 100
 target-version = ['py38']
