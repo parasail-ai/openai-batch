@@ -1,11 +1,38 @@
 [project]
 name = "openai-batch"
-description = "Make the OpenAI batch protocol easy to use."
+description = "Make OpenAI batch easy to use."
 dynamic = ["version"]
 requires-python = ">=3.8"
 dependencies = [
     "openai",
 ]
+readme = "README.md"
+authors = [
+    { name = "Parasail"},
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Scientific/Engineering",
+]
+
+keywords = [
+    "openai",
+    "batch",
+    "chatgpt",
+    "gpt",
+    "llm",
+    "language model",
+]
+
+[project.urls]
+homepage = "https://github.com/parasail-ai/openai-batch"
+repository = "https://github.com/parasail-ai/openai-batch"
 
 [project.optional-dependencies]
 test = [
