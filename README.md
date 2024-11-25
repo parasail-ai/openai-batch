@@ -1,3 +1,6 @@
+[![Tests](https://github.com/parasail-ai/openai-batch/actions/workflows/tests.yml/badge.svg)](https://github.com/parasail-ai/openai-batch/actions/workflows/tests.yml)
+![PyPI - Version](https://img.shields.io/pypi/v/openai-batch)
+
 # openai-batch
 
 Batch inferencing is an easy and inexpensive way to process thousands or millions of LLM inferences.
