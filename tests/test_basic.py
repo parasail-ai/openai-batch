@@ -1,8 +1,8 @@
 import openai_batch
 
 
-def test_import():
-    pass
+def test_version():
+    assert openai_batch.__version__
 
 
 def test_batch_create_array():
