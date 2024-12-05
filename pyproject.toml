@@ -49,3 +49,10 @@ build-backend = "setuptools.build_meta"
 [tool.black]
 line-length = 100
 target-version = ['py38']
+
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: slow tests, such as ones that start a real batch",
+]
+addopts = "-m 'not slow'"
