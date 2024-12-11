@@ -4,6 +4,12 @@ Construct an input file from prompts
 
 import argparse
 import json
+import typing
+
+import openai
+from openai.types.chat import ChatCompletionUserMessageParam
+from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
+from openai.types import EmbeddingCreateParams
 
 from .providers import _add_provider_arg, _get_provider
 
@@ -18,7 +24,7 @@ KNOWN_EMBEDDING_MODELS = [
     "text-embedding-3-small",
     "text-embedding-3-large",
     "text-embedding-ada-002",
-]
+] + list(typing.get_args(openai.types.EmbeddingModel))
 
 
 def get_parser():
@@ -60,22 +66,6 @@ def get_parser():
     return parser
 
 
-def chat_completion_body(args, prompt):
-    return {
-        "model": args.model,
-        "max_completion_tokens": 1024,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-
-
-def embedding_body(args, prompt):
-    return {
-        "encoding_format": "base64",
-        "model": args.model,
-        "input": prompt,
-    }
-
-
 def create_request(custom_id, body):
     return {
         "custom_id": custom_id,
@@ -108,9 +98,17 @@ def main(args=None):
         prompt = prompt.rstrip()
 
         if embedding:
-            body = embedding_body(args, prompt)
+            body = EmbeddingCreateParams(
+                encoding_format="base64",
+                model=args.model,
+                input=prompt,
+            )
         else:
-            body = chat_completion_body(args, prompt)
+            body = CompletionCreateParamsNonStreaming(
+                model=args.model,
+                max_completion_tokens=1024,
+                messages=[ChatCompletionUserMessageParam(role="user", content=prompt)],
+            )
         request = create_request(custom_id=f"line-{i+1}", body=body)
 
         line = json.dumps(request) + "\n"
