@@ -1,5 +1,5 @@
 [![Tests](https://github.com/parasail-ai/openai-batch/actions/workflows/tests.yml/badge.svg)](https://github.com/parasail-ai/openai-batch/actions/workflows/tests.yml)
-![PyPI - Version](https://img.shields.io/pypi/v/openai-batch)
+[![PyPI - Version](https://img.shields.io/pypi/v/openai-batch)](https://pypi.org/project/openai-batch/)
 
 # openai-batch
 
