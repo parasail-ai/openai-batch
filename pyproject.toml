@@ -4,7 +4,7 @@ description = "Make OpenAI batch easy to use."
 dynamic = ["version"]
 requires-python = ">=3.8"
 dependencies = [
-    "openai",
+    "openai>=1.60",
 ]
 readme = "README.md"
 authors = [
