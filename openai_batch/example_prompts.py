@@ -66,6 +66,7 @@ def main(args=None):
             prompt = f"{random.choice(ACTIONS)} {random.choice(SUBJECTS)}."
 
         args.output.write(prompt + "\n")
+    args.output.flush()
 
 
 if __name__ == "__main__":

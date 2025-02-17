@@ -2,7 +2,9 @@ import argparse
 import os
 from argparse import Namespace
 import dataclasses
+import typing
 from dataclasses import dataclass
+import openai.types
 
 
 @dataclass
@@ -20,6 +22,8 @@ class Provider:
     default_chat_model: str = "meta-llama/Meta-Llama-3-8B-Instruct"
     default_embedding_model: str = "intfloat/e5-mistral-7b-instruct"
 
+    requires_consistency: bool = True  # Default to True for safety
+
     def __str__(self):
         return self.display_name or self.name or self.base_url
 
@@ -31,6 +35,7 @@ openai_provider = Provider(
     api_key_env_var="OPENAI_API_KEY",
     default_chat_model="gpt-4o-mini",
     default_embedding_model="text-embedding-3-small",
+    requires_consistency=True,  # OpenAI requires model consistency
 )
 
 
@@ -41,6 +46,7 @@ parasail_provider = Provider(
     api_key_env_var="PARASAIL_API_KEY",
     default_chat_model="meta-llama/Meta-Llama-3-8B-Instruct",
     default_embedding_model="intfloat/e5-mistral-7b-instruct",
+    requires_consistency=False,  # Parasail allows mixing models
 )
 
 all_providers = [openai_provider, parasail_provider]
@@ -74,22 +80,38 @@ def _add_provider_args(parser: argparse.ArgumentParser):
     )
 
 
+openai_models = list(typing.get_args(openai.types.EmbeddingModel))
+openai_models += list(typing.get_args(openai.types.ChatModel))
+
+
+def get_provider_by_model(model: str) -> Provider:
+    import openai
+
+    # If model is in OpenAI's list, use OpenAI provider
+    if model in openai_models:
+        return dataclasses.replace(openai_provider)
+
+    # Default to Parasail provider
+    return dataclasses.replace(parasail_provider)
+
+
 def _get_provider(args: Namespace) -> Provider:
     provider = Provider()
 
-    if args.provider:
-        for p in all_providers:
-            if p.name == args.provider:
-                provider = dataclasses.replace(p)
+    if args:
+        if args.provider:
+            for p in all_providers:
+                if p.name == args.provider:
+                    provider = dataclasses.replace(p)
 
-    if "base_url" in args and args.base_url:
-        provider = dataclasses.replace(provider, base_url=args.base_url)
+        if "base_url" in args and args.base_url:
+            provider = dataclasses.replace(provider, base_url=args.base_url)
 
-    # find API key
-    if "api_key" in args and args.api_key:
-        provider.api_key = args.api_key
+        # find API key
+        if "api_key" in args and args.api_key:
+            provider.api_key = args.api_key
 
-    if not provider.api_key and provider.api_key_env_var:
-        provider.api_key = os.getenv(provider.api_key_env_var)
+        if not provider.api_key and provider.api_key_env_var:
+            provider.api_key = os.getenv(provider.api_key_env_var)
 
     return provider

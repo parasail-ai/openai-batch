@@ -40,7 +40,7 @@ export OPENAI_API_KEY="<Your OpenAI API Key>"
 
 # Create an example batch input file
 python -m openai_batch.example_prompts | \
-  python -m openai_batch.create_input --model 'gpt-4o-mini' > input.jsonl
+  python -m openai_batch.create_batch --model 'gpt-4o-mini' > input.jsonl
 
 # Run this batch (resumable with `--resume <BATCH_ID>`)
 python -m openai_batch.run input.jsonl
@@ -53,7 +53,7 @@ export PARASAIL_API_KEY="<Your Parasail API Key>"
 
 # Create an example batch input file
 python -m openai_batch.example_prompts | \
-  python -m openai_batch.create_input --model 'meta-llama/Meta-Llama-3-8B-Instruct' > input.jsonl
+  python -m openai_batch.create_batch --model 'meta-llama/Meta-Llama-3-8B-Instruct' > input.jsonl
 
 # Run this batch (resumable with `--resume <BATCH_ID>`)
 python -m openai_batch.run -p parasail input.jsonl
