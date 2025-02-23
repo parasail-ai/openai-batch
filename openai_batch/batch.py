@@ -3,7 +3,9 @@ Batch processing functionality for OpenAI API requests
 """
 
 import json
+from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 from openai.types import EmbeddingCreateParams
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
@@ -17,8 +19,22 @@ class BatchType(Enum):
 
 
 class Batch:
-    def __init__(self, output_file, custom_id_prefix="line"):
-        self.output_file = output_file
+    def __init__(self, submission_input_file=None, custom_id_prefix="line"):
+        if submission_input_file is None:
+            # Generate default filename with date and time
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            submission_input_file = f"batch_submission_{current_time}.jsonl"
+
+        # If submission_input_file is a string, create the file
+        if isinstance(submission_input_file, str):
+            path = Path(submission_input_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.submission_input_file = open(path, "w", encoding="utf-8")
+            self._should_close = True
+        else:
+            self.submission_input_file = submission_input_file
+            self._should_close = False
+
         self.custom_id_prefix = custom_id_prefix
         self.n_bytes = 0
         self.n_requests = 0
@@ -30,7 +46,10 @@ class Batch:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.output_file.flush()
+        if self._should_close:
+            self.submission_input_file.close()
+        else:
+            self.submission_input_file.flush()
 
     def _get_custom_id(self):
         return f"{self.custom_id_prefix}-{self.n_requests + 1}"
@@ -56,7 +75,7 @@ class Batch:
                 f"Exceeded max batch input file size ({self.provider.batch_input_max_bytes // 1024 // 1024} MB)"
             )
 
-        self.output_file.write(line)
+        self.submission_input_file.write(line)
         self.n_bytes += n_bytes
         self.n_requests += 1
 

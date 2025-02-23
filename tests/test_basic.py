@@ -13,17 +13,17 @@ def test_version():
 
 def test_batch_create_array(tmp_path):
     prompts = ["Say Pong", "Hello"]
-    output_file = tmp_path / "batch.jsonl"
+    submission_input_file = tmp_path / "batch.jsonl"
 
     # Test chat completion batch
-    with open(output_file, "w") as f:
-        with batch.Batch(f) as batch_obj:
+    with open(submission_input_file, "w") as f:
+        with batch.Batch(submission_input_file=f) as batch_obj:
             for prompt in prompts:
                 batch_obj.add_to_batch(
                     model="gpt-4", messages=[{"role": "user", "content": prompt}]
                 )
 
-    lines = output_file.read_text().splitlines()
+    lines = submission_input_file.read_text().splitlines()
     assert len(lines) == len(prompts)
     for line in lines:
         request = json.loads(line)
@@ -32,12 +32,12 @@ def test_batch_create_array(tmp_path):
         assert request["body"]["messages"][0]["role"] == "user"
 
     # Test embedding batch
-    with open(output_file, "w") as f:
-        with batch.Batch(f) as batch_obj:
+    with open(submission_input_file, "w") as f:
+        with batch.Batch(submission_input_file=f) as batch_obj:
             for prompt in prompts:
                 batch_obj.add_to_batch(model="text-embedding-3-small", input=prompt)
 
-    lines = output_file.read_text().splitlines()
+    lines = submission_input_file.read_text().splitlines()
     assert len(lines) == len(prompts)
     for line in lines:
         request = json.loads(line)

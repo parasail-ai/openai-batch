@@ -75,7 +75,7 @@ def test_openai_model_consistency():
     """Test that OpenAI provider enforces model consistency"""
     # Test chat completion batch
     output = io.StringIO()
-    batch_instance = batch.Batch(output)
+    batch_instance = batch.Batch(submission_input_file=output)
 
     # First request with OpenAI model to ensure OpenAI provider
     batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
@@ -114,7 +114,7 @@ def test_parasail_model_mixing():
 def test_request_type_consistency():
     """Test that request type consistency is always enforced regardless of provider"""
     output = io.StringIO()
-    batch_instance = batch.Batch(output_file=output)
+    batch_instance = batch.Batch(submission_input_file=output)
 
     # No input or messages
     with pytest.raises(
@@ -132,7 +132,7 @@ def test_request_type_consistency():
 
 def test_invalid_request_type():
     output = io.StringIO()
-    batch_instance = batch.Batch(output)
+    batch_instance = batch.Batch(submission_input_file=output)
 
     # This should raise ValueError - no input or messages
     with pytest.raises(
