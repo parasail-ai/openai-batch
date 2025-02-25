@@ -1,9 +1,10 @@
 from tempfile import TemporaryDirectory
 from pathlib import Path
+import io
 
 import pytest
 
-from openai_batch import example_prompts, create_input
+from openai_batch import example_prompts, create_batch_input, create_input, batch
 
 
 @pytest.mark.parametrize(
@@ -27,7 +28,7 @@ def test_example_prompts_script(args):
     [False, True],
     ids=["chat completion", "embedding"],
 )
-def test_create_input_script(embedding):
+def test_create_batch_script(embedding):
     n = 10
     e = ["-e"] if embedding else []
 
@@ -39,7 +40,7 @@ def test_create_input_script(embedding):
         example_prompts.main([str(prompts), "-n", str(n)] + e)
 
         # convert prompts to batch input file
-        create_input.main([str(prompts), str(input_file)] + e)
+        create_batch_input.main([str(prompts), str(input_file)] + e)
 
         # validate file
         contents = input_file.read_text()
@@ -50,3 +51,98 @@ def test_create_input_script(embedding):
                 assert '"input"' in line
             else:
                 assert '"messages"' in line
+
+
+def test_backwards_compatibility():
+    """Test that the old create_input module works the same as create_batch_input"""
+    output1 = io.StringIO()
+    output2 = io.StringIO()
+
+    # Create batches using both old and new imports
+    batch1 = create_input.Batch(output1)
+    batch2 = create_batch_input.Batch(output2)
+
+    # Add same requests to both
+    for batch in [batch1, batch2]:
+        batch.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+        batch.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "World"}])
+
+    # Verify outputs are identical
+    assert output1.getvalue() == output2.getvalue()
+
+
+def test_openai_model_consistency():
+    """Test that OpenAI provider enforces model consistency"""
+    # Test chat completion batch
+    output = io.StringIO()
+    batch_instance = batch.Batch(output)
+
+    # First request with OpenAI model to ensure OpenAI provider
+    batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+
+    # Same model should work
+    batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+
+    # Different model should raise error
+    with pytest.raises(ValueError, match="Provider openai requires model consistency"):
+        batch_instance.add_to_batch(
+            model="gpt-3.5-turbo", messages=[{"role": "user", "content": "Hello"}]
+        )
+
+    # Wrong request type should still raise error
+    with pytest.raises(ValueError, match="Cannot add embedding to a chat completion batch"):
+        batch_instance.add_to_batch(model="text-embedding-3-large", input="Hello")
+
+
+def test_parasail_model_mixing():
+    """Test that Parasail provider allows mixing models"""
+    output = io.StringIO()
+    batch_instance = batch.Batch(output)
+
+    # First request with Parasail model
+    batch_instance.add_to_batch(
+        model="meta-llama/Meta-Llama-3-8B-Instruct", messages=[{"role": "user", "content": "Hello"}]
+    )
+
+    # Different model should work with Parasail
+    batch_instance.add_to_batch(
+        model="meta-llama/Meta-Llama-3-70B-Instruct",
+        messages=[{"role": "user", "content": "Hello"}],
+    )
+
+
+def test_request_type_consistency():
+    """Test that request type consistency is always enforced regardless of provider"""
+    output = io.StringIO()
+    batch_instance = batch.Batch(output_file=output)
+
+    # No input or messages
+    with pytest.raises(
+        ValueError,
+        match="Request must include either 'input' for embeddings or 'messages' for chat completions",
+    ):
+        batch_instance.add_to_batch(model="test", temperature=0.7)
+
+    # Both input and messages
+    with pytest.raises(ValueError, match="Request cannot include both 'input' and 'messages'"):
+        batch_instance.add_to_batch(
+            model="test", input="Hello", messages=[{"role": "user", "content": "Hello"}]
+        )
+
+
+def test_invalid_request_type():
+    output = io.StringIO()
+    batch_instance = batch.Batch(output)
+
+    # This should raise ValueError - no input or messages
+    with pytest.raises(
+        ValueError,
+        match="Request must include either 'input' for embeddings or 'messages' for chat completions",
+    ):
+        batch_instance.add_to_batch(model="test", temperature=0.7)
+
+    # This should raise ValueError - both input and messages
+    with pytest.raises(ValueError, match="Request cannot include both 'input' and 'messages'"):
+        batch_instance.add_to_batch(
+            model="test", input="Hello", messages=[{"role": "user", "content": "Hello"}]
+        )

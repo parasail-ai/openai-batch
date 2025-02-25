@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from openai_batch import example_prompts, create_input, run, providers
+from openai_batch import example_prompts, batch, create_batch_input, run, providers
 
 CHAT_MODELS = {
     "openai": "gpt-4o-mini",
@@ -27,18 +27,11 @@ def get_dry_run_parameters():
 def test_run_script_dry_run(provider, resume):
     with TemporaryDirectory() as td:
         input_file = Path(td) / "batch_input_file.txt"
-
-        input_file.write_text(
-            json.dumps(
-                create_input.create_request(
-                    "request-1",
-                    {
-                        "model": CHAT_MODELS[provider.name],
-                        "messages": [{"role": "user", "content": "Hello, World!"}],
-                    },
+        with open(input_file, "w") as input:
+            with batch.Batch(input) as batch_obj:
+                batch_obj.add_to_batch(
+                    model="gpt-4", messages=[{"role": "user", "content": "Hello, World!"}]
                 )
-            )
-        )
 
         if not resume:
             run.main(
@@ -83,7 +76,7 @@ def test_run_script_full(provider):
         example_prompts.main([str(prompt_file), "-n", str(n)])
 
         # convert prompts to batch input file
-        create_input.main(
+        create_batch_input.main(
             [str(prompt_file), str(input_file), "--model", CHAT_MODELS[provider.name]]
         )
 

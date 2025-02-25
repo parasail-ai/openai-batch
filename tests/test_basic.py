@@ -1,17 +1,48 @@
 import httpx
+import json
 import openai
 import pytest
 
 import openai_batch
+from openai_batch import batch
 
 
 def test_version():
     assert openai_batch.__version__
 
 
-def test_batch_create_array():
+def test_batch_create_array(tmp_path):
     prompts = ["Say Pong", "Hello"]
-    pass
+    output_file = tmp_path / "batch.jsonl"
+
+    # Test chat completion batch
+    with open(output_file, "w") as f:
+        with batch.Batch(f) as batch_obj:
+            for prompt in prompts:
+                batch_obj.add_to_batch(
+                    model="gpt-4", messages=[{"role": "user", "content": prompt}]
+                )
+
+    lines = output_file.read_text().splitlines()
+    assert len(lines) == len(prompts)
+    for line in lines:
+        request = json.loads(line)
+        assert request["url"] == "/v1/chat/completions"
+        assert len(request["body"]["messages"]) == 1
+        assert request["body"]["messages"][0]["role"] == "user"
+
+    # Test embedding batch
+    with open(output_file, "w") as f:
+        with batch.Batch(f) as batch_obj:
+            for prompt in prompts:
+                batch_obj.add_to_batch(model="text-embedding-3-small", input=prompt)
+
+    lines = output_file.read_text().splitlines()
+    assert len(lines) == len(prompts)
+    for line in lines:
+        request = json.loads(line)
+        assert request["url"] == "/v1/embeddings"
+        assert "input" in request["body"]
 
 
 @pytest.mark.parametrize(
