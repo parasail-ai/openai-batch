@@ -45,6 +45,98 @@ def test_batch_create_array(tmp_path):
         assert "input" in request["body"]
 
 
+def test_batch_submit_and_wait(tmp_path):
+    """Test the new submit and wait functionality in Batch class"""
+    submission_input_file = tmp_path / "batch.jsonl"
+    output_file = tmp_path / "output.jsonl"
+    error_file = tmp_path / "error.jsonl"
+
+    # Create a batch with some requests
+    batch_obj = batch.Batch(
+        submission_input_file=submission_input_file,
+        output_file=output_file,
+        error_file=error_file,
+    )
+    batch_obj.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+
+    def mock_server(request: httpx.Request) -> httpx.Response:
+        if "files" in request.url.path:
+            return httpx.Response(
+                200,
+                json={
+                    "id": "file-abc",
+                    "bytes": 100,
+                    "created_at": 0,
+                    "filename": "test.jsonl",
+                    "object": "file",
+                    "purpose": "batch",
+                    "status": "processed",
+                },
+            )
+        elif "batches" in request.url.path:
+            if request.method == "POST":
+                return httpx.Response(
+                    200,
+                    json=openai.types.Batch(
+                        id="batch-abc",
+                        status="in_progress",
+                        completion_window="24h",
+                        created_at=0,
+                        endpoint="/v1/chat/completions",
+                        input_file_id="file-abc",
+                        object="batch",
+                    ).model_dump(),
+                )
+            else:  # GET for status check
+                return httpx.Response(
+                    200,
+                    json=openai.types.Batch(
+                        id="batch-abc",
+                        status="completed",
+                        completion_window="24h",
+                        created_at=0,
+                        endpoint="/v1/chat/completions",
+                        input_file_id="file-abc",
+                        output_file_id="file-output",
+                        error_file_id="file-error",
+                        object="batch",
+                    ).model_dump(),
+                )
+
+    # Mock the OpenAI client
+    mock_client = openai.OpenAI(
+        http_client=httpx.Client(transport=httpx.MockTransport(mock_server)), api_key="abc"
+    )
+    batch_obj.provider = batch.get_provider_by_model("gpt-4")
+    batch_obj.provider.api_key = "abc"
+    batch_obj.provider.base_url = mock_client.base_url
+
+    # Test submit
+    batch_id = batch_obj.submit()
+    assert batch_id == "batch-abc"
+    assert batch_obj.batch_id == "batch-abc"
+
+    # Test wait
+    result = batch_obj.wait(interval=0)
+    assert result.id == "batch-abc"
+    assert result.status == "completed"
+
+    # Test submit_and_wait
+    batch_obj = batch.Batch(
+        submission_input_file=submission_input_file,
+        output_file=output_file,
+        error_file=error_file,
+    )
+    batch_obj.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+    batch_obj.provider = batch.get_provider_by_model("gpt-4")
+    batch_obj.provider.api_key = "abc"
+    batch_obj.provider.base_url = mock_client.base_url
+
+    result = batch_obj.submit_and_wait(interval=0)
+    assert result.id == "batch-abc"
+    assert result.status == "completed"
+
+
 @pytest.mark.parametrize(
     "num_iterations, batch_ids",
     [
@@ -62,7 +154,8 @@ def test_batch_create_array(tmp_path):
         "in progress - multiple batches",
     ],
 )
-def test_wait(num_iterations, batch_ids):
+def test_legacy_wait(num_iterations, batch_ids):
+    """Test backward compatibility of the wait function"""
     per_batch_counter = {
         bid: num_iterations
         for bid in ([batch_ids] if isinstance(batch_ids, str) else list(batch_ids))
@@ -90,6 +183,7 @@ def test_wait(num_iterations, batch_ids):
         http_client=httpx.Client(transport=httpx.MockTransport(mock_server)), api_key="abc"
     )
 
+    # Test backward compatibility of the wait function
     wait_ret = openai_batch.wait(client=mock_client, batch_id=batch_ids, interval=0)
 
     # validate expected number of API calls occurred

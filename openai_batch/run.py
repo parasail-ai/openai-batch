@@ -6,9 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from openai import OpenAI
-
-from . import wait
+from .batch import Batch
 from .providers import _add_provider_args, _get_provider
 
 
@@ -65,65 +63,54 @@ def get_parser(argv):
     return parser
 
 
-def count_lines(obj):
-    if isinstance(obj, bytes):
-        obj = obj.decode("utf-8")
-
-    if isinstance(obj, str):
-        return len(obj.splitlines())
-
-    return sum(1 for _ in obj)
-
-
-def write(client, file_id, fname, dash_stream):
-    contents = client.files.content(file_id).content
-
-    if fname == "-":
-        dash_stream.write(contents)
-    else:
-        print(f"Writing {fname}")
-        Path(fname).write_bytes(contents)
-
-
 def main(args=None):
     args = get_parser(args or sys.argv).parse_args(args)
     provider = _get_provider(args)
-    client = OpenAI(base_url=provider.base_url, api_key=provider.api_key)
 
-    batch_id = args.resume
-
-    if not batch_id:
-        if not args.input_file or not args.input_file[0]:
-            print("Please specify an input file, or '-' to read from stdin.")
-            return None
-
-        if args.input_file[0] == "-":
-            input_file = sys.stdin.buffer.read()
-        else:
-            input_file = open(args.input_file[0], "rb")
-
+    if args.resume:
         if args.dry_run:
-            print(
-                f"Would start batch with {count_lines(input_file)} requests then " + "exit."
-                if args.create
-                else "wait for it to finish."
-            )
-            return None
+            print(f"Would wait until {args.resume} is complete.")
+            return args.resume
 
-        # Upload input file
-        input_file = client.files.create(file=input_file, purpose="batch")
+        # Create batch object for resuming
+        with Batch(output_file=args.output_file, error_file=args.error_file) as batch:
+            batch.provider = provider
+            batch.batch_id = args.resume
+            # Wait for completion
+            batch.wait(callback=lambda b: print(f"Status of {args.resume}: {b.status}"))
+        return args.resume
 
-        # Create batch
-        batch = client.batches.create(
-            input_file_id=input_file.id,
-            completion_window="24h",
-            endpoint="/v1/chat/completions",
+    if not args.input_file or not args.input_file[0]:
+        print("Please specify an input file, or '-' to read from stdin.")
+        return None
+
+    # Get input
+    input_file = sys.stdin.buffer.read() if args.input_file[0] == "-" else args.input_file[0]
+
+    if args.dry_run:
+        num_requests = (
+            len(input_file.decode().splitlines())
+            if isinstance(input_file, bytes)
+            else sum(1 for _ in open(input_file))
         )
+        print(
+            f"Would start batch with {num_requests} requests then "
+            + ("exit." if args.create else "wait for it to finish.")
+        )
+        return None
 
-        batch_id = batch.id
+    # Create and submit batch
+    with Batch(
+        submission_input_file=input_file,
+        output_file=args.output_file,
+        error_file=args.error_file,
+    ) as batch:
+        batch.provider = provider
+        batch_id = batch.submit()
 
         print(f"Created {batch_id}.")
         print("Processing may take anywhere from a few minutes to a few hours.")
+
         if args.create:
             print(f"This script now exits. Resume later with: --resume {batch_id}")
             return batch_id
@@ -131,31 +118,8 @@ def main(args=None):
         print("This script will now wait for batch to finish, then it will download the output.")
         print(f"You may Ctrl+C and resume later with: --resume {batch_id}")
 
-    if args.dry_run:
-        print(f"Would wait until {batch_id} is complete.")
-        return batch_id
-
-    # Wait for batch to complete
-    batch = wait(client, batch_id, callback=lambda b: print(f"Status of {batch_id}: {b.status}"))
-
-    # Download output file
-    if batch.output_file_id:
-        write(
-            client,
-            batch.output_file_id,
-            args.output_file or f"{batch_id}-output.jsonl",
-            sys.stdout,
-        )
-
-    # Download error file
-    if batch.error_file_id:
-        write(
-            client,
-            batch.error_file_id,
-            args.error_file or f"{batch_id}-errors.jsonl",
-            sys.stderr,
-        )
-
+        # Wait for completion
+        batch.wait(callback=lambda b: print(f"Status of {batch_id}: {b.status}"))
     return batch_id
 
 

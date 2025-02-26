@@ -65,12 +65,14 @@ def test_run_script_dry_run(provider, resume):
     providers.all_providers,
     ids=[str(p) for p in providers.all_providers],
 )
-def test_run_script_full(provider):
+def test_run_script_full(provider, monkeypatch):
     n = 10
 
     with TemporaryDirectory() as td:
         prompt_file = Path(td) / "prompts.txt"
         input_file = Path(td) / "batch_input_file.txt"
+        output_file = Path(td) / "output.jsonl"
+        error_file = Path(td) / "error.jsonl"
 
         # create prompts
         example_prompts.main([str(prompt_file), "-n", str(n)])
@@ -91,6 +93,46 @@ def test_run_script_full(provider):
                 f"No API key for {provider.display_name} in env var {provider.api_key_env_var}"
             )
 
+        # Mock the batch operations
+        mock_batch_id = "batch-test-123"
+
+        def mock_submit(self):
+            assert isinstance(self, batch.Batch)
+            assert Path(self.submission_input_file) == input_file
+            return mock_batch_id
+
+        def mock_wait(self, interval=60, callback=None, **kwargs):
+            assert isinstance(self, batch.Batch)
+            assert self.batch_id == mock_batch_id
+            if callback:
+                callback(
+                    openai.types.Batch(
+                        id=mock_batch_id,
+                        status="completed",
+                        completion_window="24h",
+                        created_at=0,
+                        endpoint="/v1/chat/completions",
+                        input_file_id="file-input",
+                        output_file_id="file-output",
+                        error_file_id="file-error",
+                        object="batch",
+                    )
+                )
+            return openai.types.Batch(
+                id=mock_batch_id,
+                status="completed",
+                completion_window="24h",
+                created_at=0,
+                endpoint="/v1/chat/completions",
+                input_file_id="file-input",
+                output_file_id="file-output",
+                error_file_id="file-error",
+                object="batch",
+            )
+
+        monkeypatch.setattr(batch.Batch, "submit", mock_submit)
+        monkeypatch.setattr(batch.Batch, "wait", mock_wait)
+
         # Create batch
         batch_id = run.main(
             [
@@ -100,11 +142,16 @@ def test_run_script_full(provider):
                 "--create",
                 "--api-key",
                 api_key,
+                "-o",
+                str(output_file),
+                "-e",
+                str(error_file),
             ]
         )
+        assert batch_id == mock_batch_id
 
         # wait on batch to complete
-        run.main(
+        resumed_batch_id = run.main(
             [
                 "-p",
                 provider.name,
@@ -112,5 +159,10 @@ def test_run_script_full(provider):
                 batch_id,
                 "--api-key",
                 api_key,
+                "-o",
+                str(output_file),
+                "-e",
+                str(error_file),
             ]
         )
+        assert resumed_batch_id == mock_batch_id
