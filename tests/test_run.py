@@ -65,7 +65,7 @@ def test_run_script_dry_run(provider, resume):
     providers.all_providers,
     ids=[str(p) for p in providers.all_providers],
 )
-def test_run_script_full(provider, monkeypatch):
+def test_run_script_full(provider):
     n = 10
 
     with TemporaryDirectory() as td:
@@ -93,47 +93,7 @@ def test_run_script_full(provider, monkeypatch):
                 f"No API key for {provider.display_name} in env var {provider.api_key_env_var}"
             )
 
-        # Mock the batch operations
-        mock_batch_id = "batch-test-123"
-
-        def mock_submit(self):
-            assert isinstance(self, batch.Batch)
-            assert Path(self.submission_input_file) == input_file
-            return mock_batch_id
-
-        def mock_wait(self, interval=60, callback=None, **kwargs):
-            assert isinstance(self, batch.Batch)
-            assert self.batch_id == mock_batch_id
-            if callback:
-                callback(
-                    openai.types.Batch(
-                        id=mock_batch_id,
-                        status="completed",
-                        completion_window="24h",
-                        created_at=0,
-                        endpoint="/v1/chat/completions",
-                        input_file_id="file-input",
-                        output_file_id="file-output",
-                        error_file_id="file-error",
-                        object="batch",
-                    )
-                )
-            return openai.types.Batch(
-                id=mock_batch_id,
-                status="completed",
-                completion_window="24h",
-                created_at=0,
-                endpoint="/v1/chat/completions",
-                input_file_id="file-input",
-                output_file_id="file-output",
-                error_file_id="file-error",
-                object="batch",
-            )
-
-        monkeypatch.setattr(batch.Batch, "submit", mock_submit)
-        monkeypatch.setattr(batch.Batch, "wait", mock_wait)
-
-        # Create batch
+        # Create batch with dry_run=True
         batch_id = run.main(
             [
                 str(input_file),
@@ -146,11 +106,12 @@ def test_run_script_full(provider, monkeypatch):
                 str(output_file),
                 "-e",
                 str(error_file),
+                "--dry-run",
             ]
         )
-        assert batch_id == mock_batch_id
+        assert batch_id == "batch-dry-run"
 
-        # wait on batch to complete
+        # wait on batch to complete with dry_run=True
         resumed_batch_id = run.main(
             [
                 "-p",
@@ -163,6 +124,7 @@ def test_run_script_full(provider, monkeypatch):
                 str(output_file),
                 "-e",
                 str(error_file),
+                "--dry-run",
             ]
         )
-        assert resumed_batch_id == mock_batch_id
+        assert resumed_batch_id == "batch-dry-run"

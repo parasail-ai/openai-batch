@@ -95,6 +95,21 @@ def get_provider_by_model(model: str) -> Provider:
     return dataclasses.replace(parasail_provider)
 
 
+def get_provider_by_base_url(base_url: str) -> Provider:
+    """
+    Returns the appropriate provider based on the given base URL.
+    If the base URL matches a known provider, returns that provider.
+    Otherwise, returns a new provider with the given base URL.
+    """
+    # Check if the base URL matches any of the known providers
+    for provider in all_providers:
+        if provider.base_url == base_url:
+            return dataclasses.replace(provider)
+
+    # If no match found, create a new provider with the given base URL
+    return Provider(base_url=base_url)
+
+
 def _get_provider(args: Namespace) -> Provider:
     provider = Provider()
 

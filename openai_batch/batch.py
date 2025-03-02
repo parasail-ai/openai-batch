@@ -6,6 +6,7 @@ import json
 import time
 from typing import Any, Callable, Optional
 import httpx
+from io import BytesIO
 from openai import OpenAI, NOT_GIVEN
 from openai.types.batch import Batch as OpenAIBatch
 from datetime import datetime
@@ -77,7 +78,6 @@ class Batch:
             self._should_close = True
         # Use bytes directly
         elif isinstance(self.submission_input_file, bytes):
-            from io import BytesIO
 
             self.submission_file = BytesIO(self.submission_input_file)
             self._should_close = True
@@ -156,14 +156,20 @@ class Batch:
             body = CompletionCreateParamsNonStreaming(**kwargs)
             self._add_to_batch(body, "/v1/chat/completions")
 
-    def submit(self) -> str:
+    def submit(self, dry_run: bool = False) -> str:
         """
         Submit the batch job using the current submission file.
 
+        :param dry_run: If True, skip actual API calls and return a mock batch ID (for testing)
         :return: The batch ID
         """
         if not self.provider:
             raise ValueError("No requests have been added to the batch")
+
+        # If dry_run is enabled, return a mock batch ID without making API calls
+        if dry_run:
+            self.batch_id = "batch-dry-run"
+            return self.batch_id
 
         # Create OpenAI client
         client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
@@ -203,6 +209,7 @@ class Batch:
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        dry_run: bool = False,
     ) -> OpenAIBatch:
         """
         Wait for the batch to complete.
@@ -213,10 +220,39 @@ class Batch:
         :param extra_query: Forwarded to OpenAI client
         :param extra_body: Forwarded to OpenAI client
         :param timeout: Forwarded to OpenAI client
+        :param dry_run: If True, skip actual API calls and return a mock batch object (for testing)
         :return: The completed batch object
         """
         if not self.batch_id:
             raise ValueError("Batch has not been submitted yet")
+
+        # If dry_run is enabled, return a mock batch object without making API calls
+        if dry_run:
+            # Create a mock batch object
+            mock_batch = OpenAIBatch(
+                id=self.batch_id,
+                status="completed",
+                completion_window="24h",
+                created_at=0,
+                endpoint="/v1/chat/completions",
+                input_file_id="file-dry-run-input",
+                output_file_id="file-dry-run-output",
+                error_file_id="file-dry-run-error",
+                object="batch",
+            )
+
+            # Call the callback if provided
+            if callback is not None:
+                callback(mock_batch)
+
+            # Create empty output and error files if paths are provided
+            if self.output_file:
+                Path(self.output_file).write_text("")
+
+            if self.error_file:
+                Path(self.error_file).write_text("")
+
+            return mock_batch
 
         client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
 
@@ -257,6 +293,7 @@ class Batch:
         extra_query: Query | None = None,
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        dry_run: bool = False,
     ) -> OpenAIBatch:
         """
         Submit the batch and wait for it to complete.
@@ -267,9 +304,10 @@ class Batch:
         :param extra_query: Forwarded to OpenAI client
         :param extra_body: Forwarded to OpenAI client
         :param timeout: Forwarded to OpenAI client
+        :param dry_run: If True, skip actual API calls and return mock objects (for testing)
         :return: The completed batch object
         """
-        self.submit()
+        self.submit(dry_run=dry_run)
         return self.wait(
             interval=interval,
             callback=callback,
@@ -277,4 +315,5 @@ class Batch:
             extra_query=extra_query,
             extra_body=extra_body,
             timeout=timeout,
+            dry_run=dry_run,
         )

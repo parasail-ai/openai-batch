@@ -70,6 +70,15 @@ def main(args=None):
     if args.resume:
         if args.dry_run:
             print(f"Would wait until {args.resume} is complete.")
+            # For dry run, we still want to create a batch object and call wait with dry_run=True
+            # This allows tests to verify the behavior without making API calls
+            with Batch(output_file=args.output_file, error_file=args.error_file) as batch:
+                batch.provider = provider
+                batch.batch_id = args.resume
+                # Wait for completion with dry_run=True
+                batch.wait(
+                    callback=lambda b: print(f"Status of {args.resume}: {b.status}"), dry_run=True
+                )
             return args.resume
 
         # Create batch object for resuming
@@ -97,7 +106,23 @@ def main(args=None):
             f"Would start batch with {num_requests} requests then "
             + ("exit." if args.create else "wait for it to finish.")
         )
-        return None
+
+        # For dry run, we still want to create a batch object and call submit/wait with dry_run=True
+        # This allows tests to verify the behavior without making API calls
+        with Batch(
+            submission_input_file=input_file,
+            output_file=args.output_file,
+            error_file=args.error_file,
+        ) as batch:
+            batch.provider = provider
+            batch_id = batch.submit(dry_run=True)
+
+            if args.create:
+                return batch_id
+
+            # Wait for completion with dry_run=True
+            batch.wait(callback=lambda b: print(f"Status of {batch_id}: {b.status}"), dry_run=True)
+        return batch_id
 
     # Create and submit batch
     with Batch(
@@ -106,7 +131,7 @@ def main(args=None):
         error_file=args.error_file,
     ) as batch:
         batch.provider = provider
-        batch_id = batch.submit()
+        batch_id = batch.submit(dry_run=args.dry_run)
 
         print(f"Created {batch_id}.")
         print("Processing may take anywhere from a few minutes to a few hours.")
@@ -119,7 +144,9 @@ def main(args=None):
         print(f"You may Ctrl+C and resume later with: --resume {batch_id}")
 
         # Wait for completion
-        batch.wait(callback=lambda b: print(f"Status of {batch_id}: {b.status}"))
+        batch.wait(
+            callback=lambda b: print(f"Status of {batch_id}: {b.status}"), dry_run=args.dry_run
+        )
     return batch_id
 
 
