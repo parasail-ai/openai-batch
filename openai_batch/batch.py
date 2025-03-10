@@ -4,7 +4,7 @@ Batch processing functionality for OpenAI API requests
 
 import json
 import time
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union, Tuple
 import httpx
 from io import BytesIO, TextIOWrapper
 from openai import OpenAI, NOT_GIVEN
@@ -275,7 +275,7 @@ class Batch:
         extra_body: Optional[Body] = None,
         timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
         dry_run: bool = False,
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> Tuple[Optional[str], Optional[str]]:
         """
         Download output and error files for a completed batch.
 
@@ -344,7 +344,7 @@ class Batch:
         extra_body: Optional[Body] = None,
         timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
         dry_run: bool = False,
-    ) -> tuple[OpenAIBatch, Optional[str], Optional[str]]:
+    ) -> Tuple[OpenAIBatch, Optional[str], Optional[str]]:
         """
         Submit the batch, wait for it to complete, and download the results.
 
