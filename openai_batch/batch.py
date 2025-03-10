@@ -4,7 +4,7 @@ Batch processing functionality for OpenAI API requests
 
 import json
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 import httpx
 from io import BytesIO, TextIOWrapper
 from openai import OpenAI, NOT_GIVEN
@@ -206,10 +206,10 @@ class Batch:
         self,
         interval: float = 60,
         callback: Callable[[OpenAIBatch], Any] = None,
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        extra_headers: Optional[Headers] = None,
+        extra_query: Optional[Query] = None,
+        extra_body: Optional[Body] = None,
+        timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
         dry_run: bool = False,
     ) -> OpenAIBatch:
         """
@@ -270,10 +270,10 @@ class Batch:
     def download(
         self,
         batch: Optional[OpenAIBatch] = None,
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        extra_headers: Optional[Headers] = None,
+        extra_query: Optional[Query] = None,
+        extra_body: Optional[Body] = None,
+        timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
         dry_run: bool = False,
     ) -> tuple[Optional[str], Optional[str]]:
         """
@@ -339,10 +339,10 @@ class Batch:
         self,
         interval: float = 60,
         callback: Callable[[OpenAIBatch], Any] = None,
-        extra_headers: Headers | None = None,
-        extra_query: Query | None = None,
-        extra_body: Body | None = None,
-        timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        extra_headers: Optional[Headers] = None,
+        extra_query: Optional[Query] = None,
+        extra_body: Optional[Body] = None,
+        timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
         dry_run: bool = False,
     ) -> tuple[OpenAIBatch, Optional[str], Optional[str]]:
         """
