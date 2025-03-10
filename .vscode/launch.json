@@ -2,13 +2,30 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Run All Tests",
+            "name": "All tests (Dry Run)",
             "type": "python",
             "request": "launch",
             "module": "pytest",
             "args": [
                 "tests/",
-                "-v"
+                "-v",
+                "-k",
+                "not live"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "All tests (Live Run)",
+            "type": "python",
+            "request": "launch",
+            "module": "pytest",
+            "args": [
+                "tests/",
+                "-v",
+                "-m",
+                "live",
+                "-rs"
             ],
             "console": "integratedTerminal",
             "justMyCode": false
@@ -20,7 +37,10 @@
             "module": "pytest",
             "args": [
                 "${file}",
-                "-v"
+                "-v",
+                "-m",
+                "live",
+                "-rs"
             ],
             "console": "integratedTerminal",
             "justMyCode": false

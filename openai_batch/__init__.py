@@ -33,13 +33,13 @@ from .providers import get_provider_by_base_url
 
 def wait(*args, **kwargs):
     """
-    Deprecated: Use Batch.wait() instead.
+    Deprecated: Use Batch.wait() and Batch.download() instead.
     This function is maintained for backward compatibility.
     """
     import warnings
 
     warnings.warn(
-        "The wait() function is deprecated. Use Batch.wait() instead.",
+        "The wait() function is deprecated. Use Batch.wait() and Batch.download() instead.",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -54,7 +54,14 @@ def wait(*args, **kwargs):
     batch.batch_id = batch_id
 
     # The dry_run parameter will be passed through kwargs if present
-    return batch.wait(*args[2:], **kwargs)
+    # First wait for the batch to complete
+    completed_batch = batch.wait(*args[2:], **kwargs)
+
+    # Then download the results to maintain the original behavior
+    batch.download(batch=completed_batch, **kwargs)
+
+    # Return the completed batch object
+    return completed_batch
 
 
 try:

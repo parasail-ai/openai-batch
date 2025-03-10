@@ -86,7 +86,12 @@ def main(args=None):
             batch.provider = provider
             batch.batch_id = args.resume
             # Wait for completion
-            batch.wait(callback=lambda b: print(f"Status of {args.resume}: {b.status}"))
+            completed_batch = batch.wait(
+                callback=lambda b: print(f"Status of {args.resume}: {b.status}")
+            )
+            # Download results
+            print(f"Downloading results for {args.resume}...")
+            batch.download(batch=completed_batch)
         return args.resume
 
     if not args.input_file or not args.input_file[0]:
@@ -121,7 +126,11 @@ def main(args=None):
                 return batch_id
 
             # Wait for completion with dry_run=True
-            batch.wait(callback=lambda b: print(f"Status of {batch_id}: {b.status}"), dry_run=True)
+            completed_batch = batch.wait(
+                callback=lambda b: print(f"Status of {batch_id}: {b.status}"), dry_run=True
+            )
+            # Download results with dry_run=True
+            batch.download(batch=completed_batch, dry_run=True)
         return batch_id
 
     # Create and submit batch
@@ -144,9 +153,12 @@ def main(args=None):
         print(f"You may Ctrl+C and resume later with: --resume {batch_id}")
 
         # Wait for completion
-        batch.wait(
+        completed_batch = batch.wait(
             callback=lambda b: print(f"Status of {batch_id}: {b.status}"), dry_run=args.dry_run
         )
+        # Download results
+        print(f"Downloading results for {batch_id}...")
+        batch.download(batch=completed_batch, dry_run=args.dry_run)
     return batch_id
 
 

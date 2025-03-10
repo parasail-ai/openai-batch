@@ -6,7 +6,7 @@ import json
 import time
 from typing import Any, Callable, Optional
 import httpx
-from io import BytesIO
+from io import BytesIO, TextIOWrapper
 from openai import OpenAI, NOT_GIVEN
 from openai.types.batch import Batch as OpenAIBatch
 from datetime import datetime
@@ -44,7 +44,6 @@ class Batch:
         self.error_file = error_file
         self.custom_id_prefix = custom_id_prefix
 
-        self.submission_file = None
         self._should_close = False
         self.n_bytes = 0
         self.n_requests = 0
@@ -57,13 +56,11 @@ class Batch:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.submission_file and self._should_close:
-            self.submission_file.close()
+        if self.submission_input_file and self._should_close:
+            self.submission_input_file.close()
 
     def _ensure_submission_file(self):
         """Ensure submission file is ready for writing"""
-        if self.submission_file is not None:
-            return
 
         # Generate default filename if none provided
         if self.submission_input_file is None:
@@ -74,16 +71,16 @@ class Batch:
         if isinstance(self.submission_input_file, (str, Path)):
             path = Path(self.submission_input_file)
             path.parent.mkdir(parents=True, exist_ok=True)
-            self.submission_file = open(path, "w", encoding="utf-8")
+            self.submission_input_file = open(path, "w", encoding="utf-8")
             self._should_close = True
         # Use bytes directly
         elif isinstance(self.submission_input_file, bytes):
+            self.submission_input_file = BytesIO(self.submission_input_file)
+            self._should_close = True
 
-            self.submission_file = BytesIO(self.submission_input_file)
+        elif isinstance(self.submission_input_file, TextIOWrapper):
             self._should_close = True
         else:
-            # Assume it's a file-like object
-            self.submission_file = self.submission_input_file
             self._should_close = False
 
     def _get_custom_id(self):
@@ -111,7 +108,7 @@ class Batch:
             )
 
         self._ensure_submission_file()
-        self.submission_file.write(line)
+        self.submission_input_file.write(line)
         self.n_bytes += n_bytes
         self.n_requests += 1
 
@@ -175,21 +172,25 @@ class Batch:
         client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
 
         # Close and prepare submission file for reading
-        if isinstance(self.submission_file, (BytesIO, str, Path)):
+        if isinstance(self.submission_input_file, (TextIOWrapper, BytesIO, str, Path)):
             if self._should_close:
-                self.submission_file.close()
+                self.submission_input_file.close()
 
-            if isinstance(self.submission_file, BytesIO):
-                self.submission_file.seek(0)
-                file_content = self.submission_file.read()
+            if isinstance(self.submission_input_file, BytesIO):
+                self.submission_input_file.seek(0)
+                file_content = self.submission_input_file.read()
             else:
-                with open(self.submission_input_file, "rb") as f:
+                if isinstance(self.submission_input_file, (str, Path)):
+                    file_path = Path(self.submission_input_file)
+                elif isinstance(self.submission_input_file, TextIOWrapper):
+                    file_path = Path(self.submission_input_file.name)
+                with open(file_path, "rb") as f:
                     file_content = f.read()
 
             input_file = client.files.create(file=file_content, purpose="batch")
         else:
             # File-like object provided by user
-            input_file = client.files.create(file=self.submission_file, purpose="batch")
+            input_file = client.files.create(file=self.submission_input_file, purpose="batch")
 
         # Create batch
         batch = client.batches.create(
@@ -245,13 +246,6 @@ class Batch:
             if callback is not None:
                 callback(mock_batch)
 
-            # Create empty output and error files if paths are provided
-            if self.output_file:
-                Path(self.output_file).write_text("")
-
-            if self.error_file:
-                Path(self.error_file).write_text("")
-
             return mock_batch
 
         client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
@@ -269,23 +263,79 @@ class Batch:
                 callback(batch)
 
             if batch.status in FINISHED_STATES:
-                # Download output file if present
-                if batch.output_file_id:
-                    contents = client.files.content(batch.output_file_id).content
-                    output_path = self.output_file or f"{self.batch_id}-output.jsonl"
-                    Path(output_path).write_bytes(contents)
-
-                # Download error file if present
-                if batch.error_file_id:
-                    contents = client.files.content(batch.error_file_id).content
-                    error_path = self.error_file or f"{self.batch_id}-errors.jsonl"
-                    Path(error_path).write_bytes(contents)
-
                 return batch
 
             time.sleep(interval)
 
-    def submit_and_wait(
+    def download(
+        self,
+        batch: Optional[OpenAIBatch] = None,
+        extra_headers: Headers | None = None,
+        extra_query: Query | None = None,
+        extra_body: Body | None = None,
+        timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
+        dry_run: bool = False,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        Download output and error files for a completed batch.
+
+        :param batch: The batch object to download files for (uses self.batch_id if None)
+        :param extra_headers: Forwarded to OpenAI client
+        :param extra_query: Forwarded to OpenAI client
+        :param extra_body: Forwarded to OpenAI client
+        :param timeout: Forwarded to OpenAI client
+        :param dry_run: If True, skip actual API calls and create empty files (for testing)
+        :return: Tuple of (output_path, error_path) with the paths to the downloaded files
+        """
+        if not self.batch_id and batch is None:
+            raise ValueError("Batch has not been submitted yet")
+
+        # If dry_run is enabled, create empty files without making API calls
+        if dry_run:
+            output_path = None
+            error_path = None
+
+            # Create empty output and error files if paths are provided
+            if self.output_file:
+                Path(self.output_file).write_text("")
+                output_path = self.output_file
+
+            if self.error_file:
+                Path(self.error_file).write_text("")
+                error_path = self.error_file
+
+            return output_path, error_path
+
+        client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
+
+        # Use provided batch object or retrieve the current batch
+        if batch is None:
+            batch = client.batches.retrieve(
+                batch_id=self.batch_id,
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+            )
+
+        output_path = None
+        error_path = None
+
+        # Download output file if present
+        if batch.output_file_id:
+            contents = client.files.content(batch.output_file_id).content
+            output_path = self.output_file or f"{batch.id}-output.jsonl"
+            Path(output_path).write_bytes(contents)
+
+        # Download error file if present
+        if batch.error_file_id:
+            contents = client.files.content(batch.error_file_id).content
+            error_path = self.error_file or f"{batch.id}-errors.jsonl"
+            Path(error_path).write_bytes(contents)
+
+        return output_path, error_path
+
+    def submit_wait_download(
         self,
         interval: float = 60,
         callback: Callable[[OpenAIBatch], Any] = None,
@@ -294,9 +344,9 @@ class Batch:
         extra_body: Body | None = None,
         timeout: float | httpx.Timeout | None | NotGiven = NOT_GIVEN,
         dry_run: bool = False,
-    ) -> OpenAIBatch:
+    ) -> tuple[OpenAIBatch, Optional[str], Optional[str]]:
         """
-        Submit the batch and wait for it to complete.
+        Submit the batch, wait for it to complete, and download the results.
 
         :param interval: How long to wait between each poll (in seconds)
         :param callback: Called after each API retrieve
@@ -305,10 +355,10 @@ class Batch:
         :param extra_body: Forwarded to OpenAI client
         :param timeout: Forwarded to OpenAI client
         :param dry_run: If True, skip actual API calls and return mock objects (for testing)
-        :return: The completed batch object
+        :return: Tuple of (batch, output_path, error_path)
         """
         self.submit(dry_run=dry_run)
-        return self.wait(
+        batch = self.wait(
             interval=interval,
             callback=callback,
             extra_headers=extra_headers,
@@ -317,3 +367,12 @@ class Batch:
             timeout=timeout,
             dry_run=dry_run,
         )
+        output_path, error_path = self.download(
+            batch=batch,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            extra_body=extra_body,
+            timeout=timeout,
+            dry_run=dry_run,
+        )
+        return batch, output_path, error_path

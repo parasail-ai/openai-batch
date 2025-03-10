@@ -38,6 +38,7 @@ repository = "https://github.com/parasail-ai/openai-batch"
 test = [
     "black",
     "pytest",
+    "python-dotenv",
 ]
 
 [build-system]
@@ -54,5 +55,6 @@ target-version = ['py38']
 [tool.pytest.ini_options]
 markers = [
     "slow: slow tests, such as ones that start a real batch",
+    "live: live tests that make actual API calls and require API keys",
 ]
-addopts = "-m 'not slow'"
+addopts = "-m 'not slow and not live'"

@@ -45,8 +45,8 @@ def test_batch_create_array(tmp_path):
         assert "input" in request["body"]
 
 
-def test_batch_submit_and_wait(tmp_path):
-    """Test the submit and wait functionality in Batch class using dry_run mode"""
+def test_batch_operations(tmp_path):
+    """Test the submit, wait, and download functionality in Batch class using dry_run mode"""
     submission_input_file = tmp_path / "batch.jsonl"
     output_file = tmp_path / "output.jsonl"
     error_file = tmp_path / "error.jsonl"
@@ -70,7 +70,14 @@ def test_batch_submit_and_wait(tmp_path):
     assert result.id == "batch-dry-run"
     assert result.status == "completed"
 
-    # Test submit_and_wait with dry_run=True
+    # Test download with dry_run=True
+    output_path, error_path = batch_obj.download(batch=result, dry_run=True)
+    assert str(output_path) == str(output_file)
+    assert str(error_path) == str(error_file)
+    assert output_file.exists()
+    assert error_file.exists()
+
+    # Test submit_wait_download with dry_run=True
     batch_obj = batch.Batch(
         submission_input_file=submission_input_file,
         output_file=output_file,
@@ -79,9 +86,11 @@ def test_batch_submit_and_wait(tmp_path):
     batch_obj.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
     batch_obj.provider = batch.get_provider_by_model("gpt-4")
 
-    result = batch_obj.submit_and_wait(interval=0, dry_run=True)
+    result, output_path, error_path = batch_obj.submit_wait_download(interval=0, dry_run=True)
     assert result.id == "batch-dry-run"
     assert result.status == "completed"
+    assert str(output_path) == str(output_file)
+    assert str(error_path) == str(error_file)
 
 
 def test_legacy_wait():

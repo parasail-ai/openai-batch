@@ -85,14 +85,15 @@ openai_models += list(typing.get_args(openai.types.ChatModel))
 
 
 def get_provider_by_model(model: str) -> Provider:
-    import openai
 
     # If model is in OpenAI's list, use OpenAI provider
     if model in openai_models:
-        return dataclasses.replace(openai_provider)
-
-    # Default to Parasail provider
-    return dataclasses.replace(parasail_provider)
+        provider = dataclasses.replace(openai_provider)
+        provider.api_key = os.environ.get("OPENAI_API_KEY")
+    else:
+        provider = dataclasses.replace(parasail_provider)
+        provider.api_key = os.environ.get("PARASAIL_API_KEY")
+    return provider
 
 
 def get_provider_by_base_url(base_url: str) -> Provider:
