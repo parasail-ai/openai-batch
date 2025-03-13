@@ -24,7 +24,7 @@
                 "tests/",
                 "-v",
                 "-m",
-                "live",
+                "",
                 "-rs"
             ],
             "console": "integratedTerminal",
@@ -38,6 +38,7 @@
             "args": [
                 "${file}",
                 "-v",
+                "-s",
                 "-m",
                 "live",
                 "-rs"

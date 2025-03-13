@@ -84,6 +84,19 @@ openai_models = list(typing.get_args(openai.types.EmbeddingModel))
 openai_models += list(typing.get_args(openai.types.ChatModel))
 
 
+def get_provider_by_name(name: str) -> Provider:
+    """
+    Returns the provider with the given name.
+    Raises ValueError if no provider with the given name is found.
+    """
+    for provider in all_providers:
+        if provider.name == name:
+            provider_copy = dataclasses.replace(provider)
+            provider_copy.api_key = os.environ.get(provider_copy.api_key_env_var)
+            return provider_copy
+    raise ValueError(f"No provider found with name: {name}")
+
+
 def get_provider_by_model(model: str) -> Provider:
 
     # If model is in OpenAI's list, use OpenAI provider

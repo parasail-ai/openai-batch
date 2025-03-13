@@ -30,14 +30,12 @@ MAX_BATCH_ITEMS = 20
 
 # Skip all tests in this module if the required API keys are not available
 def check_api_keys():
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    parasail_key = os.environ.get("PARASAIL_API_KEY")
-
     missing_keys = []
-    if not openai_key:
-        missing_keys.append("OPENAI_API_KEY")
-    if not parasail_key:
-        missing_keys.append("PARASAIL_API_KEY")
+
+    for provider in providers.all_providers:
+        api_key = os.environ.get(provider.api_key_env_var)
+        if not api_key:
+            missing_keys.append(provider.api_key_env_var)
 
     if missing_keys:
         pytest.skip(f"Missing required API keys: {', '.join(missing_keys)}")
@@ -47,7 +45,7 @@ def check_api_keys():
 pytestmark = [
     pytest.mark.live,  # Mark all tests as live tests
     pytest.mark.skipif(
-        not (os.environ.get("OPENAI_API_KEY") and os.environ.get("PARASAIL_API_KEY")),
+        not all(os.environ.get(p.api_key_env_var) for p in providers.all_providers),
         reason="Missing required API keys for live tests",
     ),
 ]
@@ -149,16 +147,12 @@ def test_live_batch_processing_with_main(provider):
             assert "content" in choice["message"], "Missing 'content' in message"
 
 
-@pytest.mark.parametrize(
-    "provider_name",
-    ["openai", "parasail"],
-    ids=["OpenAI", "Parasail"],
-)
-def test_live_batch_processing_direct(provider_name):
-    """Test live batch processing with actual API calls using Batch object directly."""
+def test_auto_detect_provider():
+    """Test the auto_detect_provider functionality with a real batch job."""
     check_api_keys()
 
-    n = MAX_BATCH_ITEMS
+    # Use OpenAI provider for this test
+    provider_name = "openai"
     model = LIVE_TEST_MODELS[provider_name]
 
     with TemporaryDirectory() as td:
@@ -166,9 +160,80 @@ def test_live_batch_processing_direct(provider_name):
         error_file = Path(td) / "error.jsonl"
         submission_file = Path(td) / "batch_submission.jsonl"
 
-        # Create a batch with direct API calls
+        # Step 1: Create and submit a batch with a specified provider
+        provider_obj = batch.get_provider_by_model(model)
         with batch.Batch(
-            submission_input_file=submission_file, output_file=output_file, error_file=error_file
+            submission_input_file=submission_file,
+            output_file=output_file,
+            error_file=error_file,
+            provider=provider_obj,
+        ) as batch_obj:
+            # Add a single test prompt to the batch
+            batch_obj.add_to_batch(
+                model=model,
+                messages=[{"role": "user", "content": "Write a one-sentence test response."}],
+            )
+
+            # Submit the batch
+            batch_id = batch_obj.submit()
+            print(f"Created batch {batch_id} for auto-detect test")
+
+        # Step 2: Create a new batch object with the batch_id but NO provider
+        # This will test the auto_detect_provider functionality
+        resumed_batch = batch.Batch(
+            batch_id=batch_id,
+            output_file=output_file,
+            error_file=error_file,
+        )
+
+        # Get the status - this should auto-detect the provider
+        batch_status = resumed_batch.status()
+
+        # Verify the provider was auto-detected correctly
+        assert resumed_batch.provider is not None, "Provider was not auto-detected"
+        assert (
+            resumed_batch.provider.name == provider_name
+        ), f"Expected provider {provider_name}, got {resumed_batch.provider.name}"
+
+        # Wait for the batch to complete
+        while batch_status.status not in batch.FINISHED_STATES:
+            print(f"Batch status: {batch_status.status}")
+            import time
+
+            time.sleep(10)
+            batch_status = resumed_batch.status()
+
+        # Download the results - this should also work with the auto-detected provider
+        output_path, error_path = resumed_batch.download()
+
+        # Verify the output file exists
+        assert Path(output_path).exists(), "Output file was not created"
+
+
+@pytest.mark.parametrize(
+    "provider",
+    providers.all_providers,
+    ids=[str(p) for p in providers.all_providers],
+)
+def test_live_batch_processing_direct(provider):
+    """Test live batch processing with actual API calls using Batch object directly."""
+    check_api_keys()
+
+    n = MAX_BATCH_ITEMS
+    model = LIVE_TEST_MODELS[provider.name]
+
+    with TemporaryDirectory() as td:
+        output_file = Path(td) / "output.jsonl"
+        error_file = Path(td) / "error.jsonl"
+        submission_file = Path(td) / "batch_submission.jsonl"
+
+        # Create a batch with direct API calls
+        provider_obj = batch.get_provider_by_model(model)
+        with batch.Batch(
+            submission_input_file=submission_file,
+            output_file=output_file,
+            error_file=error_file,
+            provider=provider_obj,
         ) as batch_obj:
             # Add test prompts to the batch
             for i in range(n):
@@ -179,21 +244,19 @@ def test_live_batch_processing_direct(provider_name):
                     ],
                 )
 
-            # The provider is auto-detected from the model
+            # Provider is now passed directly to the Batch constructor
             # Submit, wait for the batch to complete, and download results
+            # (submit_wait_download now includes the wait logic)
             result, output_path, error_path = batch_obj.submit_wait_download()
 
             # Verify the batch completed successfully
             assert result.status == "completed", f"Batch failed with status: {result.status}"
-            assert output_path == str(
+            assert str(output_path) == str(
                 output_file
-            ), f"Output path mismatch: {output_path} vs {output_file}"
-            assert error_path == str(
-                error_file
-            ), f"Error path mismatch: {error_path} vs {error_file}"
+            ), f"Output path mismatch: {output_path} vs {str(output_file)}"
 
         # Verify output file exists and has the correct number of entries
-        assert output_file.exists(), f"Output file not created for {provider_name}"
+        assert output_file.exists(), f"Output file not created for {provider.display_name}"
 
         # Read output file and verify structure
         output_lines = output_file.read_text().splitlines()

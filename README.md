@@ -64,4 +64,3 @@ python -m openai_batch.run -p parasail input.jsonl
 * [OpenAI Batch Cookbook](https://cookbook.openai.com/examples/batch_processing)
 * [OpenAI Batch API reference](https://platform.openai.com/docs/api-reference/batch)
 * [OpenAI Files API reference](https://platform.openai.com/docs/api-reference/files)
-* [Anthropic's Message Batches](https://www.anthropic.com/news/message-batches-api) - Uses a different API

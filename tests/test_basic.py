@@ -52,21 +52,22 @@ def test_batch_operations(tmp_path):
     error_file = tmp_path / "error.jsonl"
 
     # Create a batch with some requests
+    provider = batch.get_provider_by_model("gpt-4")
     batch_obj = batch.Batch(
         submission_input_file=submission_input_file,
         output_file=output_file,
         error_file=error_file,
+        provider=provider,
     )
     batch_obj.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
-    batch_obj.provider = batch.get_provider_by_model("gpt-4")
 
     # Test submit with dry_run=True
     batch_id = batch_obj.submit(dry_run=True)
     assert batch_id == "batch-dry-run"
     assert batch_obj.batch_id == "batch-dry-run"
 
-    # Test wait with dry_run=True
-    result = batch_obj.wait(interval=0, dry_run=True)
+    # Test status with dry_run=True
+    result = batch_obj.status(dry_run=True)
     assert result.id == "batch-dry-run"
     assert result.status == "completed"
 
@@ -78,13 +79,14 @@ def test_batch_operations(tmp_path):
     assert error_file.exists()
 
     # Test submit_wait_download with dry_run=True
+    provider = batch.get_provider_by_model("gpt-4")
     batch_obj = batch.Batch(
         submission_input_file=submission_input_file,
         output_file=output_file,
         error_file=error_file,
+        provider=provider,
     )
     batch_obj.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
-    batch_obj.provider = batch.get_provider_by_model("gpt-4")
 
     result, output_path, error_path = batch_obj.submit_wait_download(interval=0, dry_run=True)
     assert result.id == "batch-dry-run"
@@ -98,3 +100,16 @@ def test_legacy_wait():
     # Note: This test would need to be updated in the actual openai_batch module
     # to support dry_run mode. For now, we're just testing that the function exists.
     assert hasattr(openai_batch, "wait")
+
+
+def test_batch_validation():
+    """Test validation rules for Batch creation and usage"""
+    # Test that providing both submission_input_file and batch_id raises an error
+    with pytest.raises(ValueError, match="Cannot specify both submission_input_file and batch_id"):
+        batch.Batch(submission_input_file="input.jsonl", batch_id="batch-123")
+
+    # Test that adding to a batch with batch_id set raises an error
+    provider = batch.get_provider_by_model("gpt-4")
+    batch_obj = batch.Batch(batch_id="batch-123", provider=provider)
+    with pytest.raises(ValueError, match="Adding to an existing batch is not supported"):
+        batch_obj.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])

@@ -4,6 +4,7 @@ Run a batch job start to finish.
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from .batch import Batch
@@ -72,23 +73,38 @@ def main(args=None):
             print(f"Would wait until {args.resume} is complete.")
             # For dry run, we still want to create a batch object and call wait with dry_run=True
             # This allows tests to verify the behavior without making API calls
-            with Batch(output_file=args.output_file, error_file=args.error_file) as batch:
-                batch.provider = provider
-                batch.batch_id = args.resume
+            with Batch(
+                output_file=args.output_file,
+                error_file=args.error_file,
+                batch_id=args.resume,
+                provider=provider,
+            ) as batch:
                 # Wait for completion with dry_run=True
-                batch.wait(
-                    callback=lambda b: print(f"Status of {args.resume}: {b.status}"), dry_run=True
-                )
-            return args.resume
+                # Use status and implement wait logic
+                while True:
+                    batch_status = batch.status(dry_run=True)
+                    print(f"Status of {args.resume}: {batch_status.status}")
+                    if batch_status.status in ("failed", "completed", "expired", "cancelled"):
+                        break
+                    # No need to sleep in dry_run mode
+                return args.resume
 
         # Create batch object for resuming
-        with Batch(output_file=args.output_file, error_file=args.error_file) as batch:
-            batch.provider = provider
-            batch.batch_id = args.resume
-            # Wait for completion
-            completed_batch = batch.wait(
-                callback=lambda b: print(f"Status of {args.resume}: {b.status}")
-            )
+        with Batch(
+            output_file=args.output_file,
+            error_file=args.error_file,
+            batch_id=args.resume,
+            provider=provider,
+        ) as batch:
+            # Wait for completion using status
+            completed_batch = None
+            interval = 60  # Default interval in seconds
+            while True:
+                completed_batch = batch.status()
+                print(f"Status of {args.resume}: {completed_batch.status}")
+                if completed_batch.status in ("failed", "completed", "expired", "cancelled"):
+                    break
+                time.sleep(interval)
             # Download results
             print(f"Downloading results for {args.resume}...")
             batch.download(batch=completed_batch)
@@ -118,17 +134,21 @@ def main(args=None):
             submission_input_file=input_file,
             output_file=args.output_file,
             error_file=args.error_file,
+            provider=provider,
         ) as batch:
-            batch.provider = provider
             batch_id = batch.submit(dry_run=True)
 
             if args.create:
                 return batch_id
 
-            # Wait for completion with dry_run=True
-            completed_batch = batch.wait(
-                callback=lambda b: print(f"Status of {batch_id}: {b.status}"), dry_run=True
-            )
+            # Wait for completion with dry_run=True using status
+            completed_batch = None
+            while True:
+                completed_batch = batch.status(dry_run=True)
+                print(f"Status of {batch_id}: {completed_batch.status}")
+                if completed_batch.status in ("failed", "completed", "expired", "cancelled"):
+                    break
+                # No need to sleep in dry_run mode
             # Download results with dry_run=True
             batch.download(batch=completed_batch, dry_run=True)
         return batch_id
@@ -138,8 +158,8 @@ def main(args=None):
         submission_input_file=input_file,
         output_file=args.output_file,
         error_file=args.error_file,
+        provider=provider,
     ) as batch:
-        batch.provider = provider
         batch_id = batch.submit(dry_run=args.dry_run)
 
         print(f"Created {batch_id}.")
@@ -152,10 +172,15 @@ def main(args=None):
         print("This script will now wait for batch to finish, then it will download the output.")
         print(f"You may Ctrl+C and resume later with: --resume {batch_id}")
 
-        # Wait for completion
-        completed_batch = batch.wait(
-            callback=lambda b: print(f"Status of {batch_id}: {b.status}"), dry_run=args.dry_run
-        )
+        # Wait for completion using status
+        completed_batch = None
+        interval = 60  # Default interval in seconds
+        while True:
+            completed_batch = batch.status(dry_run=args.dry_run)
+            print(f"Status of {batch_id}: {completed_batch.status}")
+            if completed_batch.status in ("failed", "completed", "expired", "cancelled"):
+                break
+            time.sleep(interval)
         # Download results
         print(f"Downloading results for {batch_id}...")
         batch.download(batch=completed_batch, dry_run=args.dry_run)
