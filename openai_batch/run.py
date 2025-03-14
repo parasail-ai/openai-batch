@@ -107,7 +107,7 @@ def main(args=None):
                 time.sleep(interval)
             # Download results
             print(f"Downloading results for {args.resume}...")
-            batch.download(batch=completed_batch)
+            batch.download()
         return args.resume
 
     if not args.input_file or not args.input_file[0]:
@@ -150,7 +150,7 @@ def main(args=None):
                     break
                 # No need to sleep in dry_run mode
             # Download results with dry_run=True
-            batch.download(batch=completed_batch, dry_run=True)
+            batch.download(dry_run=True)
         return batch_id
 
     # Create and submit batch
@@ -183,7 +183,7 @@ def main(args=None):
             time.sleep(interval)
         # Download results
         print(f"Downloading results for {batch_id}...")
-        batch.download(batch=completed_batch, dry_run=args.dry_run)
+        batch.download(dry_run=args.dry_run)
     return batch_id
 
 

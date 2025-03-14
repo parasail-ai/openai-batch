@@ -191,8 +191,8 @@ class Batch:
             self.batch_id = "batch-dry-run"
             return self.batch_id
 
-        # Create OpenAI client
-        client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
+        # Get OpenAI client from provider
+        client = self.provider.get_client()
 
         # Close and prepare submission file for reading
         if isinstance(self.submission_input_file, (TextIOWrapper, BytesIO, str, Path)):
@@ -247,7 +247,7 @@ class Batch:
                     continue
 
                 # Try to retrieve the batch status using this provider
-                client = OpenAI(base_url=provider_copy.base_url, api_key=provider_copy.api_key)
+                client = provider_copy.get_client()
                 client.batches.retrieve(batch_id=self.batch_id)
 
                 # If we get here, the provider worked
@@ -286,7 +286,7 @@ class Batch:
         # If dry_run is enabled, return a mock batch object without making API calls
         if dry_run:
             # Create a mock batch object
-            mock_batch = OpenAIBatch(
+            return OpenAIBatch(
                 id=self.batch_id,
                 status="completed",
                 completion_window="24h",
@@ -297,13 +297,11 @@ class Batch:
                 error_file_id="file-dry-run-error",
                 object="batch",
             )
-            return mock_batch
-
         # Auto-detect provider if not set
         if self.provider is None:
             self.auto_detect_provider()
 
-        client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
+        client = self.provider.get_client()
         batch = client.batches.retrieve(
             batch_id=self.batch_id,
             extra_headers=extra_headers,
@@ -315,7 +313,6 @@ class Batch:
 
     def download(
         self,
-        batch: Optional[OpenAIBatch] = None,
         extra_headers: Optional[Headers] = None,
         extra_query: Optional[Query] = None,
         extra_body: Optional[Body] = None,
@@ -325,7 +322,6 @@ class Batch:
         """
         Download output and error files for a completed batch.
 
-        :param batch: The batch object to download files for (uses self.batch_id if None)
         :param extra_headers: Forwarded to OpenAI client
         :param extra_query: Forwarded to OpenAI client
         :param extra_body: Forwarded to OpenAI client
@@ -333,7 +329,7 @@ class Batch:
         :param dry_run: If True, skip actual API calls and create empty files (for testing)
         :return: Tuple of (output_path, error_path) with the paths to the downloaded files
         """
-        if not self.batch_id and batch is None:
+        if not self.batch_id:
             raise ValueError("Batch has not been submitted yet")
 
         # If dry_run is enabled, create empty files without making API calls
@@ -356,17 +352,16 @@ class Batch:
         if self.provider is None:
             self.auto_detect_provider()
 
-        client = OpenAI(base_url=self.provider.base_url, api_key=self.provider.api_key)
+        client = self.provider.get_client()
 
         # Use provided batch object or retrieve the current batch
-        if batch is None:
-            batch = client.batches.retrieve(
-                batch_id=self.batch_id,
-                extra_headers=extra_headers,
-                extra_query=extra_query,
-                extra_body=extra_body,
-                timeout=timeout,
-            )
+        batch = client.batches.retrieve(
+            batch_id=self.batch_id,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            extra_body=extra_body,
+            timeout=timeout,
+        )
 
         output_path = None
         error_path = None
@@ -388,7 +383,7 @@ class Batch:
     def submit_wait_download(
         self,
         interval: float = 60,
-        callback: Callable[[OpenAIBatch], Any] = None,
+        status_callback: Callable[[OpenAIBatch], Any] = None,
         extra_headers: Optional[Headers] = None,
         extra_query: Optional[Query] = None,
         extra_body: Optional[Body] = None,
@@ -420,8 +415,8 @@ class Batch:
                 dry_run=dry_run,
             )
 
-            if callback is not None:
-                callback(batch)
+            if status_callback is not None:
+                status_callback(batch)
 
             print(batch.status)
             if batch.status in FINISHED_STATES:
@@ -431,7 +426,6 @@ class Batch:
 
         # Download results
         output_path, error_path = self.download(
-            batch=batch,
             extra_headers=extra_headers,
             extra_query=extra_query,
             extra_body=extra_body,

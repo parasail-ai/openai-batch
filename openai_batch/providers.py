@@ -5,6 +5,7 @@ import dataclasses
 import typing
 from dataclasses import dataclass
 import openai.types
+from openai import OpenAI
 
 
 @dataclass
@@ -24,8 +25,20 @@ class Provider:
 
     requires_consistency: bool = True  # Default to True for safety
 
+    # Cache for the OpenAI client
+    _client = None
+
     def __str__(self):
         return self.display_name or self.name or self.base_url
+
+    def get_client(self):
+        """
+        Returns an OpenAI client configured with this provider's base_url and api_key.
+        Reuses the client instance if one has already been created.
+        """
+        if self._client is None:
+            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        return self._client
 
 
 openai_provider = Provider(

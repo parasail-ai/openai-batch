@@ -72,7 +72,7 @@ def test_batch_operations(tmp_path):
     assert result.status == "completed"
 
     # Test download with dry_run=True
-    output_path, error_path = batch_obj.download(batch=result, dry_run=True)
+    output_path, error_path = batch_obj.download(dry_run=True)
     assert str(output_path) == str(output_file)
     assert str(error_path) == str(error_file)
     assert output_file.exists()
