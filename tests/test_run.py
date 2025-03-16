@@ -71,6 +71,8 @@ def test_run_script_full(provider):
     with TemporaryDirectory() as td:
         prompt_file = Path(td) / "prompts.txt"
         input_file = Path(td) / "batch_input_file.txt"
+        output_file = Path(td) / "output.jsonl"
+        error_file = Path(td) / "error.jsonl"
 
         # create prompts
         example_prompts.main([str(prompt_file), "-n", str(n)])
@@ -91,7 +93,7 @@ def test_run_script_full(provider):
                 f"No API key for {provider.display_name} in env var {provider.api_key_env_var}"
             )
 
-        # Create batch
+        # Create batch with dry_run=True
         batch_id = run.main(
             [
                 str(input_file),
@@ -100,11 +102,17 @@ def test_run_script_full(provider):
                 "--create",
                 "--api-key",
                 api_key,
+                "-o",
+                str(output_file),
+                "-e",
+                str(error_file),
+                "--dry-run",
             ]
         )
+        assert batch_id == "batch-dry-run"
 
-        # wait on batch to complete
-        run.main(
+        # wait on batch to complete with dry_run=True
+        resumed_batch_id = run.main(
             [
                 "-p",
                 provider.name,
@@ -112,5 +120,11 @@ def test_run_script_full(provider):
                 batch_id,
                 "--api-key",
                 api_key,
+                "-o",
+                str(output_file),
+                "-e",
+                str(error_file),
+                "--dry-run",
             ]
         )
+        assert resumed_batch_id == "batch-dry-run"

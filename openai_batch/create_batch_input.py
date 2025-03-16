@@ -50,7 +50,7 @@ def get_parser():
 def main(args=None):
     args = get_parser().parse_args(args)
 
-    with Batch(output_file=args.output) as batch:
+    with Batch(submission_input_file=args.output) as batch:
         for prompt in args.input:
             if args.embedding:
                 batch.add_to_batch(model=args.model, input=prompt.rstrip())

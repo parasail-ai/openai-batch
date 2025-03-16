@@ -3,12 +3,33 @@ Batch processing functionality for OpenAI API requests
 """
 
 import json
+import os
+import time
+import dataclasses
+from typing import Any, Callable, Optional, Union, Tuple
+import httpx
+from io import BytesIO, TextIOWrapper
+from openai import OpenAI, NOT_GIVEN
+from openai.types.batch import Batch as OpenAIBatch
+from datetime import datetime
 from enum import Enum
+from pathlib import Path
+
+try:
+    # noinspection PyProtectedMember
+    from openai._types import NotGiven, Body, Query, Headers
+except ImportError:
+    NotGiven = Any
+    Body = Any
+    Query = Any
+    Headers = Any
 
 from openai.types import EmbeddingCreateParams
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 
-from .providers import get_provider_by_model
+from .providers import get_provider_by_model, get_provider_by_name, all_providers
+
+FINISHED_STATES = ("failed", "completed", "expired", "cancelled")
 
 
 class BatchType(Enum):
@@ -17,20 +38,63 @@ class BatchType(Enum):
 
 
 class Batch:
-    def __init__(self, output_file, custom_id_prefix="line"):
+    def __init__(
+        self,
+        submission_input_file=None,
+        output_file=None,
+        error_file=None,
+        custom_id_prefix="line",
+        batch_id=None,
+        provider=None,
+    ):
+        if submission_input_file is not None and batch_id is not None:
+            raise ValueError(
+                "Cannot specify both submission_input_file and batch_id because adding to an existing batch is not supported"
+            )
+
+        self.submission_input_file = submission_input_file
         self.output_file = output_file
+        self.error_file = error_file
         self.custom_id_prefix = custom_id_prefix
+        self.batch_id = batch_id
+
+        self._should_close = False
         self.n_bytes = 0
         self.n_requests = 0
         self.model = None
-        self.provider = None
+        self.provider = provider
         self.batch_type = None
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.output_file.flush()
+        if self.submission_input_file and self._should_close:
+            self.submission_input_file.close()
+
+    def _ensure_submission_file(self):
+        """Ensure submission file is ready for writing"""
+
+        # Generate default filename if none provided
+        if self.submission_input_file is None:
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.submission_input_file = f"batch_submission_{current_time}.jsonl"
+
+        # Create file if path provided
+        if isinstance(self.submission_input_file, (str, Path)):
+            path = Path(self.submission_input_file)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self.submission_input_file = open(path, "w", encoding="utf-8")
+            self._should_close = True
+        # Use bytes directly
+        elif isinstance(self.submission_input_file, bytes):
+            self.submission_input_file = BytesIO(self.submission_input_file)
+            self._should_close = True
+
+        elif isinstance(self.submission_input_file, TextIOWrapper):
+            self._should_close = True
+        else:
+            self._should_close = False
 
     def _get_custom_id(self):
         return f"{self.custom_id_prefix}-{self.n_requests + 1}"
@@ -56,11 +120,16 @@ class Batch:
                 f"Exceeded max batch input file size ({self.provider.batch_input_max_bytes // 1024 // 1024} MB)"
             )
 
-        self.output_file.write(line)
+        self._ensure_submission_file()
+        self.submission_input_file.write(line)
         self.n_bytes += n_bytes
         self.n_requests += 1
 
     def add_to_batch(self, **kwargs):
+        # Check if batch_id is set, which means we're working with an existing batch
+        if self.batch_id is not None:
+            raise ValueError("Adding to an existing batch is not supported")
+
         # Ensure model is included in kwargs
         if "model" not in kwargs:
             raise ValueError("Model must be specified in arguments")
@@ -76,11 +145,17 @@ class Batch:
         if is_embedding and is_chat_completion:
             raise ValueError("Request cannot include both 'input' and 'messages'")
 
-        # On first request, determine provider and batch type
-        if self.provider is None:
-            self.model = kwargs["model"]
-            self.provider = get_provider_by_model(self.model)
+        # Set batch type if not already set
+        if self.batch_type is None:
             self.batch_type = BatchType.EMBEDDING if is_embedding else BatchType.CHAT_COMPLETION
+
+        # Set model if not already set
+        if self.model is None:
+            self.model = kwargs["model"]
+
+        # On first request, determine provider
+        if self.provider is None:
+            self.provider = get_provider_by_model(self.model)
         else:
             # Validate batch type matches request type
             if is_embedding and self.batch_type != BatchType.EMBEDDING:
@@ -100,3 +175,261 @@ class Batch:
         else:  # is_chat_completion
             body = CompletionCreateParamsNonStreaming(**kwargs)
             self._add_to_batch(body, "/v1/chat/completions")
+
+    def submit(self, dry_run: bool = False) -> str:
+        """
+        Submit the batch job using the current submission file.
+
+        :param dry_run: If True, skip actual API calls and return a mock batch ID (for testing)
+        :return: The batch ID
+        """
+        if not self.provider:
+            raise ValueError("No requests have been added to the batch")
+
+        # If dry_run is enabled, return a mock batch ID without making API calls
+        if dry_run:
+            self.batch_id = "batch-dry-run"
+            return self.batch_id
+
+        # Get OpenAI client from provider
+        client = self.provider.get_client()
+
+        # Close and prepare submission file for reading
+        if isinstance(self.submission_input_file, (TextIOWrapper, BytesIO, str, Path)):
+            if self._should_close:
+                self.submission_input_file.close()
+
+            if isinstance(self.submission_input_file, BytesIO):
+                self.submission_input_file.seek(0)
+                file_content = self.submission_input_file.read()
+            else:
+                if isinstance(self.submission_input_file, (str, Path)):
+                    file_path = Path(self.submission_input_file)
+                elif isinstance(self.submission_input_file, TextIOWrapper):
+                    file_path = Path(self.submission_input_file.name)
+                with open(file_path, "rb") as f:
+                    file_content = f.read()
+
+            input_file = client.files.create(file=file_content, purpose="batch")
+        else:
+            # File-like object provided by user
+            input_file = client.files.create(file=self.submission_input_file, purpose="batch")
+
+        # Create batch
+        batch = client.batches.create(
+            input_file_id=input_file.id,
+            completion_window="24h",
+            endpoint="/v1/chat/completions",
+        )
+
+        self.batch_id = batch.id
+        return self.batch_id
+
+    def auto_detect_provider(self):
+        """
+        Attempt to auto-detect the provider by trying to retrieve the batch status from all available providers.
+        If successful, sets the provider object. Otherwise, raises an exception.
+
+        This is used when a batch job is resumed (batch_id is provided but not submission_input_file)
+        and the provider is not set.
+        """
+        # These should be programming errors, not user errors
+        assert self.batch_id, "Cannot auto-detect provider without a batch ID"
+        assert self.provider is None, "Provider is already set, no need to auto-detect"
+
+        for provider in all_providers:
+            try:
+                # Create a copy of the provider with the API key
+                provider_copy = dataclasses.replace(provider)
+                provider_copy.api_key = os.environ.get(provider_copy.api_key_env_var)
+
+                if not provider_copy.api_key:
+                    continue
+
+                # Try to retrieve the batch status using this provider
+                client = provider_copy.get_client()
+                client.batches.retrieve(batch_id=self.batch_id)
+
+                # If we get here, the provider worked
+                self.provider = provider_copy
+                return
+            except Exception:
+                # This provider didn't work, try the next one
+                continue
+
+        # If we get here, no provider worked
+        raise ValueError(
+            f"Could not auto-detect provider for batch ID {self.batch_id}. Please specify a provider."
+        )
+
+    def status(
+        self,
+        extra_headers: Optional[Headers] = None,
+        extra_query: Optional[Query] = None,
+        extra_body: Optional[Body] = None,
+        timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
+        dry_run: bool = False,
+    ) -> OpenAIBatch:
+        """
+        Get the status of the current batch job.
+
+        :param extra_headers: Forwarded to OpenAI client
+        :param extra_query: Forwarded to OpenAI client
+        :param extra_body: Forwarded to OpenAI client
+        :param timeout: Forwarded to OpenAI client
+        :param dry_run: If True, skip actual API calls and return a mock batch object (for testing)
+        :return: The batch object
+        """
+        if not self.batch_id:
+            raise ValueError("Batch has not been submitted yet")
+
+        # If dry_run is enabled, return a mock batch object without making API calls
+        if dry_run:
+            # Create a mock batch object
+            return OpenAIBatch(
+                id=self.batch_id,
+                status="completed",
+                completion_window="24h",
+                created_at=0,
+                endpoint="/v1/chat/completions",
+                input_file_id="file-dry-run-input",
+                output_file_id="file-dry-run-output",
+                error_file_id="file-dry-run-error",
+                object="batch",
+            )
+        # Auto-detect provider if not set
+        if self.provider is None:
+            self.auto_detect_provider()
+
+        client = self.provider.get_client()
+        batch = client.batches.retrieve(
+            batch_id=self.batch_id,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            extra_body=extra_body,
+            timeout=timeout,
+        )
+        return batch
+
+    def download(
+        self,
+        extra_headers: Optional[Headers] = None,
+        extra_query: Optional[Query] = None,
+        extra_body: Optional[Body] = None,
+        timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
+        dry_run: bool = False,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Download output and error files for a completed batch.
+
+        :param extra_headers: Forwarded to OpenAI client
+        :param extra_query: Forwarded to OpenAI client
+        :param extra_body: Forwarded to OpenAI client
+        :param timeout: Forwarded to OpenAI client
+        :param dry_run: If True, skip actual API calls and create empty files (for testing)
+        :return: Tuple of (output_path, error_path) with the paths to the downloaded files
+        """
+        if not self.batch_id:
+            raise ValueError("Batch has not been submitted yet")
+
+        # If dry_run is enabled, create empty files without making API calls
+        if dry_run:
+            output_path = None
+            error_path = None
+
+            # Create empty output and error files if paths are provided
+            if self.output_file:
+                Path(self.output_file).write_text("")
+                output_path = self.output_file
+
+            if self.error_file:
+                Path(self.error_file).write_text("")
+                error_path = self.error_file
+
+            return output_path, error_path
+
+        # Auto-detect provider if not set
+        if self.provider is None:
+            self.auto_detect_provider()
+
+        client = self.provider.get_client()
+
+        # Use provided batch object or retrieve the current batch
+        batch = client.batches.retrieve(
+            batch_id=self.batch_id,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            extra_body=extra_body,
+            timeout=timeout,
+        )
+
+        output_path = None
+        error_path = None
+
+        # Download output file if present
+        if batch.output_file_id:
+            contents = client.files.content(batch.output_file_id).content
+            output_path = self.output_file or f"{batch.id}-output.jsonl"
+            Path(output_path).write_bytes(contents)
+
+        # Download error file if present
+        if batch.error_file_id:
+            contents = client.files.content(batch.error_file_id).content
+            error_path = self.error_file or f"{batch.id}-errors.jsonl"
+            Path(error_path).write_bytes(contents)
+
+        return output_path, error_path
+
+    def submit_wait_download(
+        self,
+        interval: float = 60,
+        status_callback: Callable[[OpenAIBatch], Any] = None,
+        extra_headers: Optional[Headers] = None,
+        extra_query: Optional[Query] = None,
+        extra_body: Optional[Body] = None,
+        timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
+        dry_run: bool = False,
+    ) -> Tuple[OpenAIBatch, Optional[str], Optional[str]]:
+        """
+        Submit the batch, wait for it to complete, and download the results.
+
+        :param interval: How long to wait between each poll (in seconds)
+        :param callback: Called after each API retrieve
+        :param extra_headers: Forwarded to OpenAI client
+        :param extra_query: Forwarded to OpenAI client
+        :param extra_body: Forwarded to OpenAI client
+        :param timeout: Forwarded to OpenAI client
+        :param dry_run: If True, skip actual API calls and return mock objects (for testing)
+        :return: Tuple of (batch, output_path, error_path)
+        """
+        self.submit(dry_run=dry_run)
+
+        # Wait for the batch to complete
+        batch = None
+        while True:
+            batch = self.status(
+                extra_headers=extra_headers,
+                extra_query=extra_query,
+                extra_body=extra_body,
+                timeout=timeout,
+                dry_run=dry_run,
+            )
+
+            if status_callback is not None:
+                status_callback(batch)
+
+            print(batch.status)
+            if batch.status in FINISHED_STATES:
+                break
+
+            time.sleep(interval)
+
+        # Download results
+        output_path, error_path = self.download(
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            extra_body=extra_body,
+            timeout=timeout,
+            dry_run=dry_run,
+        )
+        return batch, output_path, error_path

@@ -5,6 +5,7 @@ import dataclasses
 import typing
 from dataclasses import dataclass
 import openai.types
+from openai import OpenAI
 
 
 @dataclass
@@ -24,8 +25,20 @@ class Provider:
 
     requires_consistency: bool = True  # Default to True for safety
 
+    # Cache for the OpenAI client
+    _client = None
+
     def __str__(self):
         return self.display_name or self.name or self.base_url
+
+    def get_client(self):
+        """
+        Returns an OpenAI client configured with this provider's base_url and api_key.
+        Reuses the client instance if one has already been created.
+        """
+        if self._client is None:
+            self._client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        return self._client
 
 
 openai_provider = Provider(
@@ -84,15 +97,44 @@ openai_models = list(typing.get_args(openai.types.EmbeddingModel))
 openai_models += list(typing.get_args(openai.types.ChatModel))
 
 
+def get_provider_by_name(name: str) -> Provider:
+    """
+    Returns the provider with the given name.
+    Raises ValueError if no provider with the given name is found.
+    """
+    for provider in all_providers:
+        if provider.name == name:
+            provider_copy = dataclasses.replace(provider)
+            provider_copy.api_key = os.environ.get(provider_copy.api_key_env_var)
+            return provider_copy
+    raise ValueError(f"No provider found with name: {name}")
+
+
 def get_provider_by_model(model: str) -> Provider:
-    import openai
 
     # If model is in OpenAI's list, use OpenAI provider
     if model in openai_models:
-        return dataclasses.replace(openai_provider)
+        provider = dataclasses.replace(openai_provider)
+        provider.api_key = os.environ.get("OPENAI_API_KEY")
+    else:
+        provider = dataclasses.replace(parasail_provider)
+        provider.api_key = os.environ.get("PARASAIL_API_KEY")
+    return provider
 
-    # Default to Parasail provider
-    return dataclasses.replace(parasail_provider)
+
+def get_provider_by_base_url(base_url: str) -> Provider:
+    """
+    Returns the appropriate provider based on the given base URL.
+    If the base URL matches a known provider, returns that provider.
+    Otherwise, returns a new provider with the given base URL.
+    """
+    # Check if the base URL matches any of the known providers
+    for provider in all_providers:
+        if provider.base_url == base_url:
+            return dataclasses.replace(provider)
+
+    # If no match found, create a new provider with the given base URL
+    return Provider(base_url=base_url)
 
 
 def _get_provider(args: Namespace) -> Provider:
