@@ -176,10 +176,11 @@ class Batch:
             body = CompletionCreateParamsNonStreaming(**kwargs)
             self._add_to_batch(body, "/v1/chat/completions")
 
-    def submit(self, dry_run: bool = False) -> str:
+    def submit(self, metadata: Optional[dict] = None, dry_run: bool = False) -> str:
         """
         Submit the batch job using the current submission file.
 
+        :param metadata: Optional metadata to associate with the batch
         :param dry_run: If True, skip actual API calls and return a mock batch ID (for testing)
         :return: The batch ID
         """
@@ -220,6 +221,7 @@ class Batch:
             input_file_id=input_file.id,
             completion_window="24h",
             endpoint="/v1/chat/completions",
+            metadata=metadata,
         )
 
         self.batch_id = batch.id
@@ -388,21 +390,23 @@ class Batch:
         extra_query: Optional[Query] = None,
         extra_body: Optional[Body] = None,
         timeout: Union[float, httpx.Timeout, None, NotGiven] = NOT_GIVEN,
+        metadata: Optional[dict] = None,
         dry_run: bool = False,
     ) -> Tuple[OpenAIBatch, Optional[str], Optional[str]]:
         """
         Submit the batch, wait for it to complete, and download the results.
 
         :param interval: How long to wait between each poll (in seconds)
-        :param callback: Called after each API retrieve
+        :param status_callback: Called after each API retrieve
         :param extra_headers: Forwarded to OpenAI client
         :param extra_query: Forwarded to OpenAI client
         :param extra_body: Forwarded to OpenAI client
         :param timeout: Forwarded to OpenAI client
+        :param metadata: Optional metadata to associate with the batch
         :param dry_run: If True, skip actual API calls and return mock objects (for testing)
         :return: Tuple of (batch, output_path, error_path)
         """
-        self.submit(dry_run=dry_run)
+        self.submit(metadata=metadata, dry_run=dry_run)
 
         # Wait for the batch to complete
         batch = None
