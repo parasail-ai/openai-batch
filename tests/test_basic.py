@@ -44,6 +44,22 @@ def test_batch_create_array(tmp_path):
         assert request["url"] == "/v1/embeddings"
         assert "input" in request["body"]
 
+    # Test reranker batch
+    with open(submission_input_file, "w") as f:
+        with batch.Batch(submission_input_file=f) as batch_obj:
+            for prompt in prompts:
+                batch_obj.add_to_batch(
+                    model="rerank-model", text_1=prompt, text_2=f"Reranked {prompt}"
+                )
+
+    lines = submission_input_file.read_text().splitlines()
+    assert len(lines) == len(prompts)
+    for line in lines:
+        request = json.loads(line)
+        assert request["url"] == "/v1/score"
+        assert "text_1" in request["body"]
+        assert "text_2" in request["body"]
+
 
 def test_batch_operations(tmp_path):
     """Test the submit, wait, and download functionality in Batch class using dry_run mode"""

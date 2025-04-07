@@ -90,7 +90,7 @@ def test_openai_model_consistency():
         )
 
     # Wrong request type should still raise error
-    with pytest.raises(ValueError, match="Cannot add embedding to a chat completion batch"):
+    with pytest.raises(ValueError, match="Cannot add embedding to a chat_completion batch"):
         batch_instance.add_to_batch(model="text-embedding-3-large", input="Hello")
 
 
@@ -116,33 +116,47 @@ def test_request_type_consistency():
     output = io.StringIO()
     batch_instance = batch.Batch(submission_input_file=output)
 
-    # No input or messages
+    # No input, messages, or text_1
     with pytest.raises(
         ValueError,
-        match="Request must include either 'input' for embeddings or 'messages' for chat completions",
+        match="Request must include either 'input' for embeddings, 'messages' for chat completions, or 'text_1' for rerankers",
     ):
         batch_instance.add_to_batch(model="test", temperature=0.7)
 
-    # Both input and messages
-    with pytest.raises(ValueError, match="Request cannot include both 'input' and 'messages'"):
+    # Multiple request types
+    with pytest.raises(
+        ValueError,
+        match="Request cannot include multiple types of parameters. Use only one of: 'input', 'messages', or 'text_1'",
+    ):
         batch_instance.add_to_batch(
             model="test", input="Hello", messages=[{"role": "user", "content": "Hello"}]
         )
 
+    # Test reranker without text_2
+    with pytest.raises(ValueError, match="'text_2' is required for reranker requests"):
+        batch_instance.add_to_batch(model="test", text_1="Hello")
 
-def test_invalid_request_type():
+
+def test_batch_type_consistency():
+    """Test that batch type consistency is enforced"""
+    output = io.StringIO()
+
+    # Test adding reranker to chat completion batch
+    batch_instance = batch.Batch(submission_input_file=output)
+    batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+    with pytest.raises(ValueError, match="Cannot add reranker to a chat_completion batch"):
+        batch_instance.add_to_batch(model="rerank-model", text_1="Hello", text_2="World")
+
+    # Test adding chat completion to reranker batch
     output = io.StringIO()
     batch_instance = batch.Batch(submission_input_file=output)
+    batch_instance.add_to_batch(model="rerank-model", text_1="Hello", text_2="World")
+    with pytest.raises(ValueError, match="Cannot add chat completion to a reranker batch"):
+        batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
 
-    # This should raise ValueError - no input or messages
-    with pytest.raises(
-        ValueError,
-        match="Request must include either 'input' for embeddings or 'messages' for chat completions",
-    ):
-        batch_instance.add_to_batch(model="test", temperature=0.7)
-
-    # This should raise ValueError - both input and messages
-    with pytest.raises(ValueError, match="Request cannot include both 'input' and 'messages'"):
-        batch_instance.add_to_batch(
-            model="test", input="Hello", messages=[{"role": "user", "content": "Hello"}]
-        )
+    # Test adding embedding to reranker batch
+    output = io.StringIO()
+    batch_instance = batch.Batch(submission_input_file=output)
+    batch_instance.add_to_batch(model="rerank-model", text_1="Hello", text_2="World")
+    with pytest.raises(ValueError, match="Cannot add embedding to a reranker batch"):
+        batch_instance.add_to_batch(model="text-embedding-3-small", input="Hello")

@@ -35,6 +35,7 @@ FINISHED_STATES = ("failed", "completed", "expired", "cancelled")
 class BatchType(Enum):
     CHAT_COMPLETION = "chat_completion"
     EMBEDDING = "embedding"
+    RERANKER = "reranker"
 
 
 class Batch:
@@ -137,17 +138,29 @@ class Batch:
         # Determine request type based on kwargs
         is_embedding = "input" in kwargs
         is_chat_completion = "messages" in kwargs
+        is_reranker = "text_1" in kwargs
 
-        if not is_embedding and not is_chat_completion:
+        # Validate request type
+        request_type_count = sum([is_embedding, is_chat_completion, is_reranker])
+        if request_type_count == 0:
             raise ValueError(
-                "Request must include either 'input' for embeddings or 'messages' for chat completions"
+                "Request must include either 'input' for embeddings, 'messages' for chat completions, "
+                "or 'text_1' for rerankers"
             )
-        if is_embedding and is_chat_completion:
-            raise ValueError("Request cannot include both 'input' and 'messages'")
+        if request_type_count > 1:
+            raise ValueError(
+                "Request cannot include multiple types of parameters. Use only one of: "
+                "'input', 'messages', or 'text_1'"
+            )
 
         # Set batch type if not already set
         if self.batch_type is None:
-            self.batch_type = BatchType.EMBEDDING if is_embedding else BatchType.CHAT_COMPLETION
+            if is_embedding:
+                self.batch_type = BatchType.EMBEDDING
+            elif is_chat_completion:
+                self.batch_type = BatchType.CHAT_COMPLETION
+            else:  # is_reranker
+                self.batch_type = BatchType.RERANKER
 
         # Set model if not already set
         if self.model is None:
@@ -159,9 +172,11 @@ class Batch:
         else:
             # Validate batch type matches request type
             if is_embedding and self.batch_type != BatchType.EMBEDDING:
-                raise ValueError("Cannot add embedding to a chat completion batch")
+                raise ValueError(f"Cannot add embedding to a {self.batch_type.value} batch")
             if is_chat_completion and self.batch_type != BatchType.CHAT_COMPLETION:
-                raise ValueError("Cannot add chat completion to an embedding batch")
+                raise ValueError(f"Cannot add chat completion to a {self.batch_type.value} batch")
+            if is_reranker and self.batch_type != BatchType.RERANKER:
+                raise ValueError(f"Cannot add reranker to a {self.batch_type.value} batch")
             if self.provider.requires_consistency and self.model != kwargs["model"]:
                 raise ValueError(
                     f"Model mismatch. Provider {self.provider.name} requires model consistency. "
@@ -172,9 +187,21 @@ class Batch:
         if is_embedding:
             body = EmbeddingCreateParams(**kwargs)
             self._add_to_batch(body, "/v1/embeddings")
-        else:  # is_chat_completion
+        elif is_chat_completion:
             body = CompletionCreateParamsNonStreaming(**kwargs)
             self._add_to_batch(body, "/v1/chat/completions")
+        else:  # is_reranker
+            # For rerankers, we just use the raw kwargs as the body
+            # since there's no specific parameter class
+            if "text_2" not in kwargs:
+                raise ValueError("'text_2' is required for reranker requests")
+
+            body = {
+                "model": kwargs["model"],
+                "text_1": kwargs["text_1"],
+                "text_2": kwargs["text_2"],
+            }
+            self._add_to_batch(body, "/v1/score")
 
     def submit(self, metadata: Optional[dict] = None, dry_run: bool = False) -> str:
         """
@@ -216,11 +243,22 @@ class Batch:
             # File-like object provided by user
             input_file = client.files.create(file=self.submission_input_file, purpose="batch")
 
+        # Determine the endpoint based on batch type
+        if self.batch_type == BatchType.CHAT_COMPLETION:
+            endpoint = "/v1/chat/completions"
+        elif self.batch_type == BatchType.EMBEDDING:
+            endpoint = "/v1/embeddings"
+        elif self.batch_type == BatchType.RERANKER:
+            endpoint = "/v1/score"
+        else:
+            # Default to chat completions for backward compatibility
+            endpoint = "/v1/chat/completions"
+
         # Create batch
         batch = client.batches.create(
             input_file_id=input_file.id,
             completion_window="24h",
-            endpoint="/v1/chat/completions",
+            endpoint=endpoint,
             metadata=metadata,
         )
 
