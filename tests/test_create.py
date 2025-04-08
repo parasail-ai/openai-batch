@@ -24,33 +24,34 @@ def test_example_prompts_script(args):
 
 
 @pytest.mark.parametrize(
-    "embedding",
-    [False, True],
-    ids=["chat completion", "embedding"],
+    "prompt_args, create_args, expected_line",
+    [
+        ([], [], "messages"),
+        (["-e"], ["-e"], "input"),
+        (["-e"], ["--score", "What's good?"], "text_1"),
+        (["-e"], ["--rerank", "What's good?"], "documents"),
+    ],
+    ids=["chat completion", "embedding", "score", "rerank"],
 )
-def test_create_batch_script(embedding):
+def test_create_batch_script(prompt_args, create_args, expected_line):
     n = 10
-    e = ["-e"] if embedding else []
 
     with TemporaryDirectory() as td:
         prompts = Path(td) / "prompts.txt"
         input_file = Path(td) / "batch_input_file.txt"
 
         # create prompts
-        example_prompts.main([str(prompts), "-n", str(n)] + e)
+        example_prompts.main([str(prompts), "-n", str(n)] + prompt_args)
 
         # convert prompts to batch input file
-        create_batch_input.main([str(prompts), str(input_file)] + e)
+        create_batch_input.main([str(prompts), str(input_file)] + create_args)
 
         # validate file
         contents = input_file.read_text()
         assert n == len(contents.splitlines())
 
         for line in contents.splitlines():
-            if embedding:
-                assert '"input"' in line
-            else:
-                assert '"messages"' in line
+            assert expected_line in line
 
 
 def test_backwards_compatibility():
@@ -90,7 +91,7 @@ def test_openai_model_consistency():
         )
 
     # Wrong request type should still raise error
-    with pytest.raises(ValueError, match="Cannot add embedding to a chat completion batch"):
+    with pytest.raises(ValueError, match="Cannot add embedding to a chat_completion batch"):
         batch_instance.add_to_batch(model="text-embedding-3-large", input="Hello")
 
 
@@ -116,33 +117,60 @@ def test_request_type_consistency():
     output = io.StringIO()
     batch_instance = batch.Batch(submission_input_file=output)
 
-    # No input or messages
+    # No input, messages, or text_1
     with pytest.raises(
         ValueError,
-        match="Request must include either 'input' for embeddings or 'messages' for chat completions",
+        match="Request must include either.*",
     ):
         batch_instance.add_to_batch(model="test", temperature=0.7)
 
-    # Both input and messages
-    with pytest.raises(ValueError, match="Request cannot include both 'input' and 'messages'"):
+    # Multiple request types
+    with pytest.raises(
+        ValueError,
+        match="Request cannot include multiple types of parameters. Use only one of: .*",
+    ):
         batch_instance.add_to_batch(
             model="test", input="Hello", messages=[{"role": "user", "content": "Hello"}]
         )
 
 
-def test_invalid_request_type():
-    output = io.StringIO()
-    batch_instance = batch.Batch(submission_input_file=output)
+def test_request_type_consistency_score():
+    batch_instance = batch.Batch(submission_input_file=io.StringIO())
 
-    # This should raise ValueError - no input or messages
-    with pytest.raises(
-        ValueError,
-        match="Request must include either 'input' for embeddings or 'messages' for chat completions",
-    ):
-        batch_instance.add_to_batch(model="test", temperature=0.7)
+    with pytest.raises(ValueError, match="'text_2' is required for score requests"):
+        batch_instance.add_to_batch(model="test", text_1="Hello")
 
-    # This should raise ValueError - both input and messages
-    with pytest.raises(ValueError, match="Request cannot include both 'input' and 'messages'"):
-        batch_instance.add_to_batch(
-            model="test", input="Hello", messages=[{"role": "user", "content": "Hello"}]
-        )
+
+def test_request_type_consistency_rerank():
+    batch_instance = batch.Batch(submission_input_file=io.StringIO())
+
+    with pytest.raises(ValueError, match="'query' is required for rerank requests"):
+        batch_instance.add_to_batch(model="test", documents=["Hello", "World"])
+
+    with pytest.raises(ValueError, match=".*'documents'.*"):
+        batch_instance.add_to_batch(model="test", documents=12)
+
+    # auto convert to a list
+    batch_instance.add_to_batch(model="test", query="query", documents="Not a list")
+
+
+def test_batch_type_consistency():
+    """Test that batch type consistency is enforced"""
+
+    # Test adding reranker to chat completion batch
+    batch_instance = batch.Batch(submission_input_file=io.StringIO())
+    batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+    with pytest.raises(ValueError, match="Cannot add score request to a chat_completion batch"):
+        batch_instance.add_to_batch(model="score-model", text_1="Hello", text_2="World")
+
+    # Test adding chat completion to reranker batch
+    batch_instance = batch.Batch(submission_input_file=io.StringIO())
+    batch_instance.add_to_batch(model="score-model", text_1="Hello", text_2="World")
+    with pytest.raises(ValueError, match="Cannot add chat completion to a score batch"):
+        batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+
+    # Test adding embedding to reranker batch
+    batch_instance = batch.Batch(submission_input_file=io.StringIO())
+    batch_instance.add_to_batch(model="score-model", text_1="Hello", text_2="World")
+    with pytest.raises(ValueError, match="Cannot add embedding to a score batch"):
+        batch_instance.add_to_batch(model="text-embedding-3-small", input="Hello")
