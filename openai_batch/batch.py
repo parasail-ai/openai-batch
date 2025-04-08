@@ -203,6 +203,7 @@ class Batch:
             }
             self._add_to_batch(body, "/v1/score")
 
+
     def submit(self, metadata: Optional[dict] = None, dry_run: bool = False) -> str:
         """
         Submit the batch job using the current submission file.
