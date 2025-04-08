@@ -24,33 +24,34 @@ def test_example_prompts_script(args):
 
 
 @pytest.mark.parametrize(
-    "embedding",
-    [False, True],
-    ids=["chat completion", "embedding"],
+    "prompt_args, create_args, expected_line",
+    [
+        ([], [], "messages"),
+        (["-e"], ["-e"], "input"),
+        (["-e"], ["--score", "What's good?"], "text_1"),
+        (["-e"], ["--rerank", "What's good?"], "documents"),
+    ],
+    ids=["chat completion", "embedding", "score", "rerank"],
 )
-def test_create_batch_script(embedding):
+def test_create_batch_script(prompt_args, create_args, expected_line):
     n = 10
-    e = ["-e"] if embedding else []
 
     with TemporaryDirectory() as td:
         prompts = Path(td) / "prompts.txt"
         input_file = Path(td) / "batch_input_file.txt"
 
         # create prompts
-        example_prompts.main([str(prompts), "-n", str(n)] + e)
+        example_prompts.main([str(prompts), "-n", str(n)] + prompt_args)
 
         # convert prompts to batch input file
-        create_batch_input.main([str(prompts), str(input_file)] + e)
+        create_batch_input.main([str(prompts), str(input_file)] + create_args)
 
         # validate file
         contents = input_file.read_text()
         assert n == len(contents.splitlines())
 
         for line in contents.splitlines():
-            if embedding:
-                assert '"input"' in line
-            else:
-                assert '"messages"' in line
+            assert expected_line in line
 
 
 def test_backwards_compatibility():

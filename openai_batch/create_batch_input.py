@@ -41,6 +41,20 @@ def get_parser():
         action="store_true",
     )
 
+    parser.add_argument(
+        "--score",
+        type=str,
+        default=None,
+        help="Create score requests, with this value as text_1 and inputs as text_2",
+    )
+
+    parser.add_argument(
+        "--rerank",
+        type=str,
+        default=None,
+        help="Create score requests, with this value as the query and inputs as documents",
+    )
+
     # Need to know batch input file size limits, this can vary by provider.
     _add_provider_arg(parser)
 
@@ -52,7 +66,11 @@ def main(args=None):
 
     with Batch(submission_input_file=args.output) as batch:
         for prompt in args.input:
-            if args.embedding:
+            if args.score:
+                batch.add_to_batch(model=args.model, text_1=args.score, text_2=prompt.rstrip())
+            elif args.rerank:
+                batch.add_to_batch(model=args.model, query=args.rerank, documents=[prompt.rstrip()])
+            elif args.embedding:
                 batch.add_to_batch(model=args.model, input=prompt.rstrip())
             else:
                 batch.add_to_batch(
