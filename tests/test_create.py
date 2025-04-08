@@ -148,7 +148,10 @@ def test_request_type_consistency_rerank():
         batch_instance.add_to_batch(model="test", documents=["Hello", "World"])
 
     with pytest.raises(ValueError, match=".*'documents'.*"):
-        batch_instance.add_to_batch(model="test", documents="Not list")
+        batch_instance.add_to_batch(model="test", documents=12)
+
+    # auto convert to a list
+    batch_instance.add_to_batch(model="test", query="query", documents="Not a list")
 
 
 def test_batch_type_consistency():

@@ -209,6 +209,9 @@ class Batch:
             self._add_to_batch(body, "/v1/score")
         else:  # is_rerank
             # Use the raw kwargs as the body since there's no specific parameter class for rerank
+            if isinstance(kwargs.get("documents"), str):
+                kwargs["documents"] = [kwargs["documents"]]
+
             if not isinstance(kwargs.get("documents"), list):
                 raise ValueError("Rerank 'documents' must be a list of strings.")
 
