@@ -35,7 +35,8 @@ FINISHED_STATES = ("failed", "completed", "expired", "cancelled")
 class BatchType(Enum):
     CHAT_COMPLETION = "chat_completion"
     EMBEDDING = "embedding"
-    RERANKER = "reranker"
+    SCORE = "score"
+    RERANK = "rerank"
 
 
 class Batch:
@@ -138,19 +139,20 @@ class Batch:
         # Determine request type based on kwargs
         is_embedding = "input" in kwargs
         is_chat_completion = "messages" in kwargs
-        is_reranker = "text_1" in kwargs
+        is_rerank = "documents" in kwargs
+        is_score = "text_1" in kwargs
 
         # Validate request type
-        request_type_count = sum([is_embedding, is_chat_completion, is_reranker])
+        request_type_count = sum([is_embedding, is_chat_completion, is_rerank, is_score])
         if request_type_count == 0:
             raise ValueError(
                 "Request must include either 'input' for embeddings, 'messages' for chat completions, "
-                "or 'text_1' for rerankers"
+                "'documents' for rerank, or 'text_1' for score"
             )
         if request_type_count > 1:
             raise ValueError(
                 "Request cannot include multiple types of parameters. Use only one of: "
-                "'input', 'messages', or 'text_1'"
+                "'input', 'messages', 'documents', or 'text_1'"
             )
 
         # Set batch type if not already set
@@ -159,8 +161,10 @@ class Batch:
                 self.batch_type = BatchType.EMBEDDING
             elif is_chat_completion:
                 self.batch_type = BatchType.CHAT_COMPLETION
-            else:  # is_reranker
-                self.batch_type = BatchType.RERANKER
+            elif is_score:
+                self.batch_type = BatchType.SCORE
+            else:  # is_rerank
+                self.batch_type = BatchType.RERANK
 
         # Set model if not already set
         if self.model is None:
@@ -175,8 +179,10 @@ class Batch:
                 raise ValueError(f"Cannot add embedding to a {self.batch_type.value} batch")
             if is_chat_completion and self.batch_type != BatchType.CHAT_COMPLETION:
                 raise ValueError(f"Cannot add chat completion to a {self.batch_type.value} batch")
-            if is_reranker and self.batch_type != BatchType.RERANKER:
-                raise ValueError(f"Cannot add reranker to a {self.batch_type.value} batch")
+            if is_score and self.batch_type != BatchType.SCORE:
+                raise ValueError(f"Cannot add score request to a {self.batch_type.value} batch")
+            if is_rerank and self.batch_type != BatchType.RERANK:
+                raise ValueError(f"Cannot add rerank request to a {self.batch_type.value} batch")
             if self.provider.requires_consistency and self.model != kwargs["model"]:
                 raise ValueError(
                     f"Model mismatch. Provider {self.provider.name} requires model consistency. "
@@ -190,11 +196,10 @@ class Batch:
         elif is_chat_completion:
             body = CompletionCreateParamsNonStreaming(**kwargs)
             self._add_to_batch(body, "/v1/chat/completions")
-        else:  # is_reranker
-            # For rerankers, we just use the raw kwargs as the body
-            # since there's no specific parameter class
+        elif is_score:
+            # Use the raw kwargs as the body since there's no specific parameter class for score
             if "text_2" not in kwargs:
-                raise ValueError("'text_2' is required for reranker requests")
+                raise ValueError("'text_2' is required for score requests")
 
             body = {
                 "model": kwargs["model"],
@@ -202,7 +207,25 @@ class Batch:
                 "text_2": kwargs["text_2"],
             }
             self._add_to_batch(body, "/v1/score")
+        else:  # is_rerank
+            # Use the raw kwargs as the body since there's no specific parameter class for rerank
+            if not isinstance(kwargs.get("documents"), list):
+                raise ValueError("Rerank 'documents' must be a list of strings.")
 
+            if "query" not in kwargs:
+                raise ValueError("'query' is required for rerank requests")
+
+            rerank_request_param_whitelist = [
+                "model",
+                "query",
+                "documents",
+                "top_n",
+                "priority",
+                "truncate_prompt_tokens",
+            ]
+
+            body = {k: kwargs[k] for k in kwargs.keys() if k in rerank_request_param_whitelist}
+            self._add_to_batch(body, "/v1/score")
 
     def submit(self, metadata: Optional[dict] = None, dry_run: bool = False) -> str:
         """
@@ -249,7 +272,7 @@ class Batch:
             endpoint = "/v1/chat/completions"
         elif self.batch_type == BatchType.EMBEDDING:
             endpoint = "/v1/embeddings"
-        elif self.batch_type == BatchType.RERANKER:
+        elif self.batch_type == BatchType.RERANK:
             endpoint = "/v1/score"
         else:
             # Default to chat completions for backward compatibility

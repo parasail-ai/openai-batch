@@ -119,44 +119,57 @@ def test_request_type_consistency():
     # No input, messages, or text_1
     with pytest.raises(
         ValueError,
-        match="Request must include either 'input' for embeddings, 'messages' for chat completions, or 'text_1' for rerankers",
+        match="Request must include either.*",
     ):
         batch_instance.add_to_batch(model="test", temperature=0.7)
 
     # Multiple request types
     with pytest.raises(
         ValueError,
-        match="Request cannot include multiple types of parameters. Use only one of: 'input', 'messages', or 'text_1'",
+        match="Request cannot include multiple types of parameters. Use only one of: .*",
     ):
         batch_instance.add_to_batch(
             model="test", input="Hello", messages=[{"role": "user", "content": "Hello"}]
         )
 
-    # Test reranker without text_2
-    with pytest.raises(ValueError, match="'text_2' is required for reranker requests"):
+
+def test_request_type_consistency_score():
+    batch_instance = batch.Batch(submission_input_file=io.StringIO())
+
+    with pytest.raises(ValueError, match="'text_2' is required for score requests"):
         batch_instance.add_to_batch(model="test", text_1="Hello")
+
+
+def test_request_type_consistency_rerank():
+    batch_instance = batch.Batch(submission_input_file=io.StringIO())
+
+    with pytest.raises(ValueError, match="'query' is required for rerank requests"):
+        batch_instance.add_to_batch(model="test", documents=["Hello", "World"])
+
+    with pytest.raises(ValueError, match=".*'documents'.*"):
+        batch_instance.add_to_batch(model="test", documents="Not list")
 
 
 def test_batch_type_consistency():
     """Test that batch type consistency is enforced"""
-    output = io.StringIO()
 
-    # Test adding reranker to chat completion batch
-    batch_instance = batch.Batch(submission_input_file=output)
-    batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
-    with pytest.raises(ValueError, match="Cannot add reranker to a chat_completion batch"):
-        batch_instance.add_to_batch(model="rerank-model", text_1="Hello", text_2="World")
-
-    # Test adding chat completion to reranker batch
-    output = io.StringIO()
-    batch_instance = batch.Batch(submission_input_file=output)
-    batch_instance.add_to_batch(model="rerank-model", text_1="Hello", text_2="World")
-    with pytest.raises(ValueError, match="Cannot add chat completion to a reranker batch"):
+    with io.StringIO() as output:
+        # Test adding reranker to chat completion batch
+        batch_instance = batch.Batch(submission_input_file=output)
         batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+        with pytest.raises(ValueError, match="Cannot add score request to a chat_completion batch"):
+            batch_instance.add_to_batch(model="score-model", text_1="Hello", text_2="World")
 
-    # Test adding embedding to reranker batch
-    output = io.StringIO()
-    batch_instance = batch.Batch(submission_input_file=output)
-    batch_instance.add_to_batch(model="rerank-model", text_1="Hello", text_2="World")
-    with pytest.raises(ValueError, match="Cannot add embedding to a reranker batch"):
-        batch_instance.add_to_batch(model="text-embedding-3-small", input="Hello")
+    with io.StringIO() as output:
+        # Test adding chat completion to reranker batch
+        batch_instance = batch.Batch(submission_input_file=output)
+        batch_instance.add_to_batch(model="score-model", text_1="Hello", text_2="World")
+        with pytest.raises(ValueError, match="Cannot add chat completion to a score batch"):
+            batch_instance.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+
+    with io.StringIO() as output:
+        # Test adding embedding to reranker batch
+        batch_instance = batch.Batch(submission_input_file=output)
+        batch_instance.add_to_batch(model="score-model", text_1="Hello", text_2="World")
+        with pytest.raises(ValueError, match="Cannot add embedding to a score batch"):
+            batch_instance.add_to_batch(model="text-embedding-3-small", input="Hello")
