@@ -44,14 +44,13 @@ def check_api_keys():
         pytest.skip(f"Missing required API keys: {', '.join(missing_keys)}")
 
 
-# Apply the check to all tests in this module
-# pytestmark = [
-#     pytest.mark.live,  # Mark all tests as live tests
-#     pytest.mark.skipif(
-#         not all(os.environ.get(p.api_key_env_var) for p in providers.all_providers),
-#         reason="Missing required API keys for live tests",
-#     ),
-# ]
+pytestmark = [
+    pytest.mark.live,  # Mark all tests as live tests
+    pytest.mark.skipif(
+        not all(os.environ.get(p.api_key_env_var) for p in providers.all_providers),
+        reason="Missing required API keys for live tests",
+    ),
+]
 
 
 @pytest.mark.parametrize(
