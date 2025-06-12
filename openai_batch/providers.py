@@ -60,6 +60,7 @@ parasail_provider = Provider(
     default_chat_model="meta-llama/Meta-Llama-3-8B-Instruct",
     default_embedding_model="intfloat/e5-mistral-7b-instruct",
     requires_consistency=False,  # Parasail allows mixing models
+    batch_input_max_bytes=500 * 1024 * 1024,
 )
 
 all_providers = [openai_provider, parasail_provider]
