@@ -10,7 +10,6 @@ import io
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from dotenv import load_dotenv
-from PIL import Image
 
 import pytest
 
@@ -285,7 +284,7 @@ def test_live_batch_processing_direct(provider):
 def test_transfusion():
     """Test transfusion (image generation) functionality with actual API calls."""
     check_api_keys()
-    import PIL
+    from PIL import Image
 
     def extract_and_save_images(input_file: str, output_dir: str):
         """Extract base64 encoded images from batch output and save as JPG files."""
