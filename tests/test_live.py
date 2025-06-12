@@ -5,9 +5,12 @@ These tests require valid API keys and will make actual API calls.
 
 import os
 import json
+import base64
+import io
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from dotenv import load_dotenv
+from PIL import Image
 
 import pytest
 
@@ -42,13 +45,13 @@ def check_api_keys():
 
 
 # Apply the check to all tests in this module
-pytestmark = [
-    pytest.mark.live,  # Mark all tests as live tests
-    pytest.mark.skipif(
-        not all(os.environ.get(p.api_key_env_var) for p in providers.all_providers),
-        reason="Missing required API keys for live tests",
-    ),
-]
+# pytestmark = [
+#     pytest.mark.live,  # Mark all tests as live tests
+#     pytest.mark.skipif(
+#         not all(os.environ.get(p.api_key_env_var) for p in providers.all_providers),
+#         reason="Missing required API keys for live tests",
+#     ),
+# ]
 
 
 @pytest.mark.parametrize(
@@ -278,3 +281,103 @@ def test_live_batch_processing_direct(provider):
             assert "message" in choice, "Missing 'message' in choice"
             assert "role" in choice["message"], "Missing 'role' in message"
             assert "content" in choice["message"], "Missing 'content' in message"
+
+
+def test_transfusion():
+    """Test transfusion (image generation) functionality with actual API calls."""
+    check_api_keys()
+    import PIL
+
+    def extract_and_save_images(input_file: str, output_dir: str):
+        """Extract base64 encoded images from batch output and save as JPG files."""
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        counter = 1
+        with open(input_file, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    data = json.loads(line.strip())
+                    b64_data = data["response"]["body"]["data"][0]["b64_json"]
+                    image_bytes = base64.b64decode(b64_data)
+                    image = Image.open(io.BytesIO(image_bytes))
+                    output_path = os.path.join(output_dir, f"image-{counter}.jpg")
+                    image.convert("RGB").save(output_path, format="JPEG")
+                    print(f"Saved {output_path}")
+                    counter += 1
+                except Exception as e:
+                    print(f"Error processing line {counter}: {e}")
+                    counter += 1
+                    continue
+
+    # Load the input image
+    image_path = Path(__file__).parent / "two_man_720.jpg"
+    assert image_path.exists(), f"Test image not found: {image_path}"
+
+    with TemporaryDirectory() as td:
+        output_file = Path(td) / "output.jsonl"
+        error_file = Path(td) / "error.jsonl"
+        submission_file = Path(td) / "batch_submission.jsonl"
+        output_images_dir = Path(td) / "output_images"
+
+        # Read and encode the image as base64 data URL
+        with open(image_path, "rb") as img_file:
+            image_data = img_file.read()
+            base64_image = base64.b64encode(image_data).decode("utf-8")
+            # Create data URL with JPEG format since we're not converting
+            # data_url = f"data:image/jpeg;base64,{base64_image}"
+
+        dev_provider = providers.Provider(
+            name="parasail_dev",
+            display_name="Parasail_dev",
+            base_url=os.environ["PARASAIL_DEV_HOST"],
+            api_key=os.environ["PARASAIL_DEV_API_KEY"],
+            default_chat_model="meta-llama/Meta-Llama-3-8B-Instruct",
+            default_embedding_model="intfloat/e5-mistral-7b-instruct",
+            requires_consistency=False,  # Parasail allows mixing models
+        )
+
+        # Create a batch with transfusion request
+        with batch.Batch(
+            submission_input_file=submission_file,
+            output_file=output_file,
+            error_file=error_file,
+            provider=dev_provider,
+        ) as batch_obj:
+            # Add transfusion request to the batch
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="A man in a black shirt is reading a book. The man is the right man in <img><|image_1|></img>.",
+                size="1024x1024",
+                image=base64_image,
+                response_format="b64_json",
+            )
+
+            # Submit, wait for completion, and download results
+            result, output_path, error_path = batch_obj.submit_wait_download()
+
+            # Verify the batch completed successfully
+            assert result.status == "completed", f"Batch failed with status: {result.status}"
+
+        # Verify output file exists
+        assert output_file.exists(), "Output file not created for transfusion"
+
+        # Extract and save generated images
+        extract_and_save_images(str(output_file), str(output_images_dir))
+
+        # Verify at least one image was generated
+        generated_images = list(output_images_dir.glob("*.jpg"))
+        assert len(generated_images) > 0, "No images were generated"
+
+        print(f"Successfully generated {len(generated_images)} images")
+
+        # Verify the structure of the output
+        output_lines = output_file.read_text().splitlines()
+        assert len(output_lines) > 0, "No output entries for transfusion"
+
+        for line in output_lines:
+            entry = json.loads(line)
+            assert "response" in entry, "Missing 'response' in output"
+            assert "body" in entry["response"], "Missing 'body' in response"
+            body = entry["response"]["body"]
+            assert "data" in body, "Missing 'data' in response body"
+            assert len(body["data"]) > 0, "Empty 'data' in response"
+            assert "b64_json" in body["data"][0], "Missing 'b64_json' in data"
