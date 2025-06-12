@@ -37,6 +37,7 @@ class BatchType(Enum):
     EMBEDDING = "embedding"
     SCORE = "score"
     RERANK = "rerank"
+    TRANSFUSION = "transfusion"
 
 
 class Batch:
@@ -141,9 +142,14 @@ class Batch:
         is_chat_completion = "messages" in kwargs
         is_rerank = "documents" in kwargs
         is_score = "text_1" in kwargs
+        is_transfusion = kwargs["model"] == "Shitao/OmniGen-v1" or (
+            "prompt" in kwargs and "size" in kwargs and "image" in kwargs
+        )
 
         # Validate request type
-        request_type_count = sum([is_embedding, is_chat_completion, is_rerank, is_score])
+        request_type_count = sum(
+            [is_embedding, is_chat_completion, is_rerank, is_score, is_transfusion]
+        )
         if request_type_count == 0:
             raise ValueError(
                 "Request must include either 'input' for embeddings, 'messages' for chat completions, "
@@ -163,6 +169,8 @@ class Batch:
                 self.batch_type = BatchType.CHAT_COMPLETION
             elif is_score:
                 self.batch_type = BatchType.SCORE
+            elif is_transfusion:
+                self.batch_type = BatchType.TRANSFUSION
             else:  # is_rerank
                 self.batch_type = BatchType.RERANK
 
@@ -183,6 +191,10 @@ class Batch:
                 raise ValueError(f"Cannot add score request to a {self.batch_type.value} batch")
             if is_rerank and self.batch_type != BatchType.RERANK:
                 raise ValueError(f"Cannot add rerank request to a {self.batch_type.value} batch")
+            if is_transfusion and self.batch_type != BatchType.TRANSFUSION:
+                raise ValueError(
+                    f"Cannot add transfusion request to a {self.batch_type.value} batch"
+                )
             if self.provider.requires_consistency and self.model != kwargs["model"]:
                 raise ValueError(
                     f"Model mismatch. Provider {self.provider.name} requires model consistency. "
@@ -207,6 +219,29 @@ class Batch:
                 "text_2": kwargs["text_2"],
             }
             self._add_to_batch(body, "/v1/score")
+        elif is_transfusion:
+            # Use the raw kwargs as the body since there's no specific parameter class for transfusion
+            # Verify all required parameters are present
+            required_params = ["prompt", "size", "image", "response_format"]
+            missing_params = [param for param in required_params if param not in kwargs]
+            # if kwargs["image"] is a string, make it a list
+            if isinstance(kwargs.get("image"), str):
+                images = [kwargs["image"]]
+            else:
+                images = kwargs["image"]
+            if missing_params:
+                raise ValueError(
+                    f"Missing required parameters for transfusion requests: {', '.join(missing_params)}"
+                )
+
+            body = {
+                "model": kwargs["model"],
+                "prompt": kwargs["prompt"],
+                "size": kwargs["size"],
+                "image": images,
+                "response_format": kwargs["response_format"],
+            }
+            self._add_to_batch(body, "/v1/images/edits")
         else:  # is_rerank
             # Use the raw kwargs as the body since there's no specific parameter class for rerank
             if isinstance(kwargs.get("documents"), str):
@@ -277,6 +312,10 @@ class Batch:
             endpoint = "/v1/embeddings"
         elif self.batch_type == BatchType.RERANK:
             endpoint = "/v1/score"
+        elif self.batch_type == BatchType.SCORE:
+            endpoint = "/v1/score"
+        elif self.batch_type == BatchType.TRANSFUSION:
+            endpoint = "/v1/images/edits"
         else:
             # Default to chat completions for backward compatibility
             endpoint = "/v1/chat/completions"
