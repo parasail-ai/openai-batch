@@ -226,22 +226,12 @@ class Batch:
             missing_params = [param for param in required_params if param not in kwargs]
             # if kwargs["image"] is a string, make it a list
             if isinstance(kwargs.get("image"), str):
-                images = [kwargs["image"]]
-            else:
-                images = kwargs["image"]
+                kwargs["images"] = [kwargs["image"]]
             if missing_params:
                 raise ValueError(
                     f"Missing required parameters for transfusion requests: {', '.join(missing_params)}"
                 )
-
-            body = {
-                "model": kwargs["model"],
-                "prompt": kwargs["prompt"],
-                "size": kwargs["size"],
-                "image": images,
-                "response_format": kwargs["response_format"],
-            }
-            self._add_to_batch(body, "/v1/images/edits")
+            self._add_to_batch(kwargs, "/v1/images/edits")
         else:  # is_rerank
             # Use the raw kwargs as the body since there's no specific parameter class for rerank
             if isinstance(kwargs.get("documents"), str):
