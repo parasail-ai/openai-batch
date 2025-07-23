@@ -129,3 +129,133 @@ def test_batch_validation():
     batch_obj = batch.Batch(batch_id="batch-123", provider=provider)
     with pytest.raises(ValueError, match="Adding to an existing batch is not supported"):
         batch_obj.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+
+
+def test_transfusion_batch_validation(tmp_path):
+    """Test transfusion batch validation including required params, image conversion, and body content"""
+    submission_input_file = tmp_path / "batch.jsonl"
+
+    # Missing required parameters
+    with pytest.raises(ValueError, match="Missing required parameters for transfusion requests"):
+        with batch.Batch(submission_input_file=submission_input_file) as batch_obj:
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="A beautiful landscape",
+                size="1024x1024",
+                # Missing image and response_format
+            )
+
+    # Missing specific required parameter
+    with pytest.raises(
+        ValueError,
+        match="Missing required parameters for transfusion requests: image",
+    ):
+        with batch.Batch(submission_input_file=submission_input_file) as batch_obj:
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="A beautiful landscape",
+                size="1024x1024",
+                response_format="url",
+                # Missing image
+            )
+
+    # Image as string gets converted to list
+    with open(submission_input_file, "w") as f:
+        with batch.Batch(submission_input_file=f) as batch_obj:
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="A beautiful landscape",
+                size="1024x1024",
+                image="https://example.com/image.jpg",
+                response_format="url",
+            )
+    # Verify the request was written correctly
+    lines = submission_input_file.read_text().splitlines()
+    assert len(lines) == 1
+    request = json.loads(lines[0])
+    assert request["url"] == "/v1/images/edits"
+    assert request["body"]["prompt"] == "A beautiful landscape"
+    assert request["body"]["size"] == "1024x1024"
+    assert request["body"]["image"] == [
+        "https://example.com/image.jpg"
+    ]  # Should be converted to list
+    assert request["body"]["response_format"] == "url"
+
+    # Image already as list stays as list
+    with open(submission_input_file, "w") as f:
+        with batch.Batch(submission_input_file=f) as batch_obj:
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="A beautiful landscape",
+                size="1024x1024",
+                image=[
+                    "https://example.com/image1.jpg",
+                    "https://example.com/image2.jpg",
+                ],
+                response_format="url",
+            )
+    lines = submission_input_file.read_text().splitlines()
+    request = json.loads(lines[0])
+    assert request["body"]["image"] == [
+        "https://example.com/image1.jpg",
+        "https://example.com/image2.jpg",
+    ]
+
+    # Body contains all passed arguments including non-required ones
+    with open(submission_input_file, "w") as f:
+        with batch.Batch(submission_input_file=f) as batch_obj:
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="A beautiful landscape",
+                size="1024x1024",
+                image="https://example.com/image.jpg",
+                response_format="url",
+                # Additional non-required parameters
+                quality="hd",
+                style="vivid",
+                extra_param="extra_value",
+            )
+    lines = submission_input_file.read_text().splitlines()
+    request = json.loads(lines[0])
+    body = request["body"]
+    # Check required parameters
+    assert body["prompt"] == "A beautiful landscape"
+    assert body["size"] == "1024x1024"
+    assert body["image"] == ["https://example.com/image.jpg"]
+    assert body["response_format"] == "url"
+    # Check non-required parameters are also included
+    assert body["quality"] == "hd"
+    assert body["style"] == "vivid"
+    assert body["extra_param"] == "extra_value"
+    assert body["model"] == "Shitao/OmniGen-v1"
+
+    # Multiple transfusion requests in same batch
+    with open(submission_input_file, "w") as f:
+        with batch.Batch(submission_input_file=f) as batch_obj:
+            # First request
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="First image",
+                size="512x512",
+                image="https://example.com/image1.jpg",
+                response_format="url",
+            )
+            # Second request
+            batch_obj.add_to_batch(
+                model="Shitao/OmniGen-v1",
+                prompt="Second image",
+                size="1024x1024",
+                image=["https://example.com/image2.jpg"],
+                response_format="b64_json",
+            )
+    lines = submission_input_file.read_text().splitlines()
+    assert len(lines) == 2
+    # Check first request
+    request1 = json.loads(lines[0])
+    assert request1["body"]["prompt"] == "First image"
+    assert request1["body"]["image"] == ["https://example.com/image1.jpg"]
+    # Check second request
+    request2 = json.loads(lines[1])
+    assert request2["body"]["prompt"] == "Second image"
+    assert request2["body"]["image"] == ["https://example.com/image2.jpg"]
+    assert request2["body"]["response_format"] == "b64_json"
