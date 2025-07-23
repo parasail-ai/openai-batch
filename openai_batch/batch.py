@@ -231,7 +231,7 @@ class Batch:
                 )
 
             # Use the raw kwargs as the body since there's no specific parameter class for transfusion
-            body = kwargs
+            body = kwargs.copy()
 
             # if kwargs["image"] is a string, make it a list
             if isinstance(kwargs.get("image"), str):
