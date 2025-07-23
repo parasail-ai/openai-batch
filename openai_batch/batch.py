@@ -220,27 +220,23 @@ class Batch:
             }
             self._add_to_batch(body, "/v1/score")
         elif is_transfusion:
-            # Use the raw kwargs as the body since there's no specific parameter class for transfusion
             # Verify all required parameters are present
             required_params = ["prompt", "size", "image", "response_format"]
-            missing_params = [param for param in required_params if param not in kwargs]
-            # if kwargs["image"] is a string, make it a list
-            if isinstance(kwargs.get("image"), str):
-                images = [kwargs["image"]]
-            else:
-                images = kwargs["image"]
+            missing_params = [
+                param for param in required_params if param not in kwargs
+            ]
             if missing_params:
                 raise ValueError(
                     f"Missing required parameters for transfusion requests: {', '.join(missing_params)}"
                 )
 
-            body = {
-                "model": kwargs["model"],
-                "prompt": kwargs["prompt"],
-                "size": kwargs["size"],
-                "image": images,
-                "response_format": kwargs["response_format"],
-            }
+            # Use the raw kwargs as the body since there's no specific parameter class for transfusion
+            body = kwargs
+
+            # if kwargs["image"] is a string, make it a list
+            if isinstance(kwargs.get("image"), str):
+                body["image"] = [kwargs["image"]]
+
             self._add_to_batch(body, "/v1/images/edits")
         else:  # is_rerank
             # Use the raw kwargs as the body since there's no specific parameter class for rerank
