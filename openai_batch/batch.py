@@ -222,9 +222,7 @@ class Batch:
         elif is_transfusion:
             # Verify all required parameters are present
             required_params = ["prompt", "size", "image", "response_format"]
-            missing_params = [
-                param for param in required_params if param not in kwargs
-            ]
+            missing_params = [param for param in required_params if param not in kwargs]
             if missing_params:
                 raise ValueError(
                     f"Missing required parameters for transfusion requests: {', '.join(missing_params)}"

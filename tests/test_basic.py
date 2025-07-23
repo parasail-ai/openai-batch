@@ -136,12 +136,8 @@ def test_transfusion_batch_validation(tmp_path):
     submission_input_file = tmp_path / "batch.jsonl"
 
     # Missing required parameters
-    with pytest.raises(
-        ValueError, match="Missing required parameters for transfusion requests"
-    ):
-        with batch.Batch(
-            submission_input_file=submission_input_file
-        ) as batch_obj:
+    with pytest.raises(ValueError, match="Missing required parameters for transfusion requests"):
+        with batch.Batch(submission_input_file=submission_input_file) as batch_obj:
             batch_obj.add_to_batch(
                 model="Shitao/OmniGen-v1",
                 prompt="A beautiful landscape",
@@ -154,9 +150,7 @@ def test_transfusion_batch_validation(tmp_path):
         ValueError,
         match="Missing required parameters for transfusion requests: image",
     ):
-        with batch.Batch(
-            submission_input_file=submission_input_file
-        ) as batch_obj:
+        with batch.Batch(submission_input_file=submission_input_file) as batch_obj:
             batch_obj.add_to_batch(
                 model="Shitao/OmniGen-v1",
                 prompt="A beautiful landscape",
