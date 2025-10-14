@@ -39,6 +39,8 @@ test = [
     "black",
     "pytest",
     "python-dotenv",
+    "filetype",
+    "pillow",
 ]
 
 [build-system]
