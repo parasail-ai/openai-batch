@@ -108,11 +108,11 @@ def data_url(arg: Union[str, Path, io.RawIOBase, Any]) -> str:
         elif uri_path := _uri_to_path(arg):
             arg = uri_path
         else:
-            raise ValueError("String does not point to a file or URL: " + arg[:100])
+            raise ValueError("String does not point to a file or URL: " + arg[:300])
 
     if isinstance(arg, Path):
         if not arg.is_file():
-            raise ValueError("Path must be a file.")
+            raise ValueError("Path must be a file: " + str(arg)[:300])
 
         mime = mimetypes.guess_type(arg)[0]
         binary = arg.read_bytes()
