@@ -64,7 +64,7 @@ def _save_pil(obj: Any) -> Tuple[Optional[str], Optional[bytes]]:
 
 
 def _uri_to_path(uri: str) -> Optional[Path]:
-    if os.name == "nt" and uri.startswith("/"):
+    if os.name == "nt" and (uri.startswith("/") or uri.startswith("\\")):
         return Path(uri[1:])  # strip leading slash on Windows
 
     parsed = urllib.parse.urlparse(uri)
