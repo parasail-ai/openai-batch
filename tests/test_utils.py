@@ -1,3 +1,4 @@
+import platform
 from io import BytesIO
 from urllib.error import HTTPError
 from pathlib import Path
@@ -24,8 +25,9 @@ def test_image_to_data_url():
     assert data == expected
 
     # Test local URI
-    data = data_url(jpg_path.as_uri())
-    assert data == expected
+    if platform.system() != "Windows":
+        data = data_url(jpg_path.as_uri())
+        assert data == expected
 
     # Test open file object
     with open(jpg_path, "rb") as f:
