@@ -2,6 +2,7 @@ from importlib.metadata import version, PackageNotFoundError
 
 from .batch import Batch
 from .providers import get_provider_by_base_url
+from ._utils import data_url
 
 
 def wait(*args, **kwargs):
