@@ -1,6 +1,7 @@
 import base64
 import io
 import mimetypes
+import os
 from pathlib import Path
 import urllib.parse
 import urllib.request
@@ -62,6 +63,18 @@ def _save_pil(obj: Any) -> Tuple[Optional[str], Optional[bytes]]:
         return None, None
 
 
+def _uri_to_path(uri: str) -> Optional[Path]:
+    if os.name == "nt" and uri.startswith("/"):
+        return Path(uri[1:])  # strip leading slash on Windows
+
+    parsed = urllib.parse.urlparse(uri)
+    if parsed.scheme == "file":
+        path = urllib.parse.unquote(parsed.path)
+        return Path(path)
+
+    return None
+
+
 def data_url(arg: Union[str, Path, io.RawIOBase, Any]) -> str:
     """
     Helper function to load images into a data url for inlining in prompts.
@@ -88,13 +101,12 @@ def data_url(arg: Union[str, Path, io.RawIOBase, Any]) -> str:
         if arg.startswith("data:"):
             return arg
 
-        if arg.startswith("file://"):
-            arg = arg[7:]
-
         if _is_url(arg):
             mime, binary = _download_from_url(arg)
         elif Path(arg).exists():
             arg = Path(arg)
+        elif uri_path := _uri_to_path(arg):
+            arg = uri_path
         else:
             raise ValueError("String does not point to a file or URL: " + arg[:100])
 
