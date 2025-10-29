@@ -96,7 +96,7 @@ def data_url(arg: Union[str, Path, io.RawIOBase, Any]) -> str:
         elif Path(arg).exists():
             arg = Path(arg)
         else:
-            raise ValueError("String does not point to a file or URL.")
+            raise ValueError("String does not point to a file or URL: " + arg[:100])
 
     if isinstance(arg, Path):
         if not arg.is_file():
