@@ -63,6 +63,32 @@ with Batch() as batch:
     result, output_path, error_path = batch.submit_wait_download()
 ```
 
+Or analyze images:
+```python
+from openai_batch import Batch, data_url
+
+with Batch() as batch:
+    images = (p for p in Path("/path/to/images").iterdir() if p.suffix.lower() in {".jpg", ".png", ".webp"})
+
+    for image in images:
+        batch.add_to_batch(
+            model="Qwen/Qwen3-VL-8B-Instruct",
+            max_completion_tokens=1000,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": data_url(image)}},
+                        {"type": "text", "text": "What is in the image?"},
+                    ],
+                }
+            ],
+        )
+
+    result, output_path, error_path = batch.submit_wait_download()
+```
+See full example script: [image_understanding.py](examples/image_understanding.py)
+
 ### Step-by-Step Workflow
 
 For more control, you can break down the process into individual steps:
