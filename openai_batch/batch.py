@@ -286,13 +286,10 @@ class Batch:
             if isinstance(self.submission_input_file, BytesIO):
                 self.submission_input_file.seek(0)
                 file_content = self.submission_input_file.read()
+            elif isinstance(self.submission_input_file, TextIOWrapper):
+                file_content = self.submission_input_file.read().encode("utf-8")
             else:
-                if isinstance(self.submission_input_file, (str, Path)):
-                    file_path = Path(self.submission_input_file)
-                elif isinstance(self.submission_input_file, TextIOWrapper):
-                    file_path = Path(self.submission_input_file.name)
-                with open(file_path, "rb") as f:
-                    file_content = f.read()
+                file_content = Path(self.submission_input_file).read_bytes()
 
             input_file = client.files.create(file=file_content, purpose="batch")
         else:
