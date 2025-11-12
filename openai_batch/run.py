@@ -5,7 +5,6 @@ Run a batch job start to finish.
 import argparse
 import sys
 import time
-from pathlib import Path
 
 from .batch import Batch
 from .providers import _add_provider_args, _get_provider
@@ -97,7 +96,6 @@ def main(args=None):
             provider=provider,
         ) as batch:
             # Wait for completion using status
-            completed_batch = None
             interval = 60  # Default interval in seconds
             while True:
                 completed_batch = batch.status()
@@ -142,7 +140,6 @@ def main(args=None):
                 return batch_id
 
             # Wait for completion with dry_run=True using status
-            completed_batch = None
             while True:
                 completed_batch = batch.status(dry_run=True)
                 print(f"Status of {batch_id}: {completed_batch.status}")
@@ -173,7 +170,6 @@ def main(args=None):
         print(f"You may Ctrl+C and resume later with: --resume {batch_id}")
 
         # Wait for completion using status
-        completed_batch = None
         interval = 60  # Default interval in seconds
         while True:
             completed_batch = batch.status(dry_run=args.dry_run)

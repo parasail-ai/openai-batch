@@ -29,18 +29,17 @@ def wait(*args, **kwargs):
     callback = kwargs.pop("callback", None) if len(args) <= 3 else args[3]
 
     # Create batch object for resuming
-    batch = Batch()
-    batch.provider = get_provider_by_base_url(client.base_url)
-    batch.provider.api_key = client.api_key
-    batch.batch_id = batch_id
+    b = Batch()
+    b.provider = get_provider_by_base_url(client.base_url)
+    b.provider.api_key = client.api_key
+    b.batch_id = batch_id
 
     # Implement wait logic using status
     from .batch import FINISHED_STATES
 
-    completed_batch = None
     while True:
         # The dry_run parameter will be passed through kwargs if present
-        completed_batch = batch.status(**kwargs)
+        completed_batch = b.status(**kwargs)
 
         if callback is not None:
             callback(completed_batch)
@@ -52,7 +51,7 @@ def wait(*args, **kwargs):
         time.sleep(interval)
 
     # Then download the results to maintain the original behavior
-    batch.download(batch=completed_batch, **kwargs)
+    b.download(**kwargs)
 
     # Return the completed batch object
     return completed_batch
