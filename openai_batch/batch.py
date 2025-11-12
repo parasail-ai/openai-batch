@@ -9,7 +9,7 @@ import dataclasses
 from typing import Any, Callable, Optional, Union, Tuple
 import httpx
 from io import BytesIO, TextIOWrapper
-from openai import OpenAI, NOT_GIVEN
+from openai import NOT_GIVEN
 from openai.types.batch import Batch as OpenAIBatch
 from datetime import datetime
 from enum import Enum
@@ -27,7 +27,7 @@ except ImportError:
 from openai.types import EmbeddingCreateParams
 from openai.types.chat.completion_create_params import CompletionCreateParamsNonStreaming
 
-from .providers import get_provider_by_model, get_provider_by_name, all_providers
+from .providers import get_provider_by_model, all_providers
 
 FINISHED_STATES = ("failed", "completed", "expired", "cancelled")
 
