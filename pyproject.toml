@@ -2,7 +2,7 @@
 name = "openai-batch"
 description = "Make OpenAI batch easy to use."
 dynamic = ["version"]
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "openai>=1.60",
 ]
