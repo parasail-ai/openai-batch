@@ -150,7 +150,14 @@ class Batch:
 
         # Validate request type
         request_type_count = sum(
-            [is_embedding, is_chat_completion, is_rerank, is_score, is_transfusion, is_transcription]
+            [
+                is_embedding,
+                is_chat_completion,
+                is_rerank,
+                is_score,
+                is_transfusion,
+                is_transcription,
+            ]
         )
         if request_type_count == 0:
             raise ValueError(
@@ -270,7 +277,14 @@ class Batch:
                 body["file_type"] = mime_part.replace("data:", "")  # e.g., "audio/wav"
             else:
                 # Assume it's a file ID
-                allowed_params = ["model", "file", "language", "response_format", "temperature", "prompt"]
+                allowed_params = [
+                    "model",
+                    "file",
+                    "language",
+                    "response_format",
+                    "temperature",
+                    "prompt",
+                ]
                 body = {k: kwargs[k] for k in kwargs if k in allowed_params}
 
             self._add_to_batch(body, "/v1/audio/transcriptions")

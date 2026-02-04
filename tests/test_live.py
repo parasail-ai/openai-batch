@@ -39,7 +39,10 @@ def check_provider_api_key(provider_name):
 
     api_key = os.environ.get(provider.api_key_env_var)
     if not api_key:
-        pytest.skip(f"Missing required API key for {provider.display_name}: {provider.api_key_env_var}")
+        pytest.skip(
+            f"Missing required API key for {provider.display_name}: {provider.api_key_env_var}"
+        )
+
 
 pytestmark = pytest.mark.live  # Mark all tests as live tests
 
