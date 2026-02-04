@@ -38,6 +38,7 @@ class BatchType(Enum):
     SCORE = "score"
     RERANK = "rerank"
     TRANSFUSION = "transfusion"
+    TRANSCRIPTION = "transcription"
 
 
 class Batch:
@@ -145,20 +146,21 @@ class Batch:
         is_transfusion = kwargs["model"] == "Shitao/OmniGen-v1" or (
             "prompt" in kwargs and "size" in kwargs and "image" in kwargs
         )
+        is_transcription = "file" in kwargs
 
         # Validate request type
         request_type_count = sum(
-            [is_embedding, is_chat_completion, is_rerank, is_score, is_transfusion]
+            [is_embedding, is_chat_completion, is_rerank, is_score, is_transfusion, is_transcription]
         )
         if request_type_count == 0:
             raise ValueError(
                 "Request must include either 'input' for embeddings, 'messages' for chat completions, "
-                "'documents' for rerank, or 'text_1' for score"
+                "'documents' for rerank, 'text_1' for score, or 'file' for transcription"
             )
         if request_type_count > 1:
             raise ValueError(
                 "Request cannot include multiple types of parameters. Use only one of: "
-                "'input', 'messages', 'documents', or 'text_1'"
+                "'input', 'messages', 'documents', 'text_1', or 'file'"
             )
 
         # Set batch type if not already set
@@ -171,6 +173,8 @@ class Batch:
                 self.batch_type = BatchType.SCORE
             elif is_transfusion:
                 self.batch_type = BatchType.TRANSFUSION
+            elif is_transcription:
+                self.batch_type = BatchType.TRANSCRIPTION
             else:  # is_rerank
                 self.batch_type = BatchType.RERANK
 
@@ -194,6 +198,10 @@ class Batch:
             if is_transfusion and self.batch_type != BatchType.TRANSFUSION:
                 raise ValueError(
                     f"Cannot add transfusion request to a {self.batch_type.value} batch"
+                )
+            if is_transcription and self.batch_type != BatchType.TRANSCRIPTION:
+                raise ValueError(
+                    f"Cannot add transcription request to a {self.batch_type.value} batch"
                 )
             if self.provider.requires_consistency and self.model != kwargs["model"]:
                 raise ValueError(
@@ -236,6 +244,36 @@ class Batch:
                 body["image"] = [kwargs["image"]]
 
             self._add_to_batch(body, "/v1/images/edits")
+        elif is_transcription:
+            # Verify model is provided (already checked above)
+            # Audio files can be base64 data URLs or file IDs
+            if "file" not in kwargs:
+                raise ValueError("Audio file must be provided as 'file' parameter")
+
+            file_param = kwargs["file"]
+
+            # Check if it's a data URL (base64 encoded)
+            if file_param.startswith("data:"):
+                # Extract MIME type and base64 data
+                if ";" not in file_param or "," not in file_param:
+                    raise ValueError("Invalid data URL format for audio file")
+
+                mime_part = file_param.split(";")[0]  # e.g., "data:audio/wav"
+                base64_data = file_param.split(",")[1]  # The actual base64 data
+
+                # Build transcription request body with base64-encoded audio
+                allowed_params = ["model", "language", "response_format", "temperature", "prompt"]
+                body = {k: kwargs[k] for k in kwargs if k in allowed_params}
+
+                # Add base64 audio data with the appropriate structure
+                body["file"] = base64_data
+                body["file_type"] = mime_part.replace("data:", "")  # e.g., "audio/wav"
+            else:
+                # Assume it's a file ID
+                allowed_params = ["model", "file", "language", "response_format", "temperature", "prompt"]
+                body = {k: kwargs[k] for k in kwargs if k in allowed_params}
+
+            self._add_to_batch(body, "/v1/audio/transcriptions")
         else:  # is_rerank
             # Use the raw kwargs as the body since there's no specific parameter class for rerank
             if isinstance(kwargs.get("documents"), str):
@@ -307,6 +345,8 @@ class Batch:
             endpoint = "/v1/score"
         elif self.batch_type == BatchType.TRANSFUSION:
             endpoint = "/v1/images/edits"
+        elif self.batch_type == BatchType.TRANSCRIPTION:
+            endpoint = "/v1/audio/transcriptions"
         else:
             # Default to chat completions for backward compatibility
             endpoint = "/v1/chat/completions"

@@ -30,26 +30,18 @@ LIVE_TEST_MODELS = {
 MAX_BATCH_ITEMS = 20
 
 
-# Skip all tests in this module if the required API keys are not available
-def check_api_keys():
-    missing_keys = []
+# Skip individual tests if their required API keys are not available
+def check_provider_api_key(provider_name):
+    """Check if the specified provider's API key is available."""
+    provider = next((p for p in providers.all_providers if p.name == provider_name), None)
+    if not provider:
+        pytest.skip(f"Unknown provider: {provider_name}")
 
-    for provider in providers.all_providers:
-        api_key = os.environ.get(provider.api_key_env_var)
-        if not api_key:
-            missing_keys.append(provider.api_key_env_var)
+    api_key = os.environ.get(provider.api_key_env_var)
+    if not api_key:
+        pytest.skip(f"Missing required API key for {provider.display_name}: {provider.api_key_env_var}")
 
-    if missing_keys:
-        pytest.skip(f"Missing required API keys: {', '.join(missing_keys)}")
-
-
-pytestmark = [
-    pytest.mark.live,  # Mark all tests as live tests
-    pytest.mark.skipif(
-        not all(os.environ.get(p.api_key_env_var) for p in providers.all_providers),
-        reason="Missing required API keys for live tests",
-    ),
-]
+pytestmark = pytest.mark.live  # Mark all tests as live tests
 
 
 @pytest.mark.parametrize(
@@ -59,7 +51,7 @@ pytestmark = [
 )
 def test_live_batch_processing_with_main(provider):
     """Test live batch processing with actual API calls using main functions."""
-    check_api_keys()
+    check_provider_api_key(provider.name)
 
     n = MAX_BATCH_ITEMS
 
@@ -150,7 +142,7 @@ def test_live_batch_processing_with_main(provider):
 
 def test_auto_detect_provider():
     """Test the auto_detect_provider functionality with a real batch job."""
-    check_api_keys()
+    check_provider_api_key("openai")
 
     # Use OpenAI provider for this test
     provider_name = "openai"
@@ -218,7 +210,7 @@ def test_auto_detect_provider():
 )
 def test_live_batch_processing_direct(provider):
     """Test live batch processing with actual API calls using Batch object directly."""
-    check_api_keys()
+    check_provider_api_key(provider.name)
 
     n = MAX_BATCH_ITEMS
     model = LIVE_TEST_MODELS[provider.name]
@@ -283,7 +275,8 @@ def test_live_batch_processing_direct(provider):
 
 def test_transfusion():
     """Test transfusion (image generation) functionality with actual API calls."""
-    check_api_keys()
+    if not os.environ.get("PARASAIL_DEV_API_KEY"):
+        pytest.skip("Missing required API key for Parasail dev: PARASAIL_DEV_API_KEY")
     from PIL import Image
 
     def extract_and_save_images(input_file: str, output_dir: str):
