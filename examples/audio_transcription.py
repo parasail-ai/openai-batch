@@ -38,12 +38,6 @@ def main():
     parser.add_argument(
         "--dry-run", help="Test without making actual API calls", action="store_true"
     )
-    parser.add_argument(
-        "--model", help="Whisper model to use", default="openai/whisper-large-v3"
-    )
-    parser.add_argument(
-        "--dry-run", help="Test without making actual API calls", action="store_true"
-    )
     args = parser.parse_args()
 
     # Resolve directory path
@@ -87,7 +81,7 @@ def main():
 
         # Submit, wait for completion, and download results
         result, output_path, error_path = batch.submit_wait_download(
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
         )
 
         print(f"\n{'=' * 50}")

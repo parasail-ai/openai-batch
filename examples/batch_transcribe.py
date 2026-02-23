@@ -92,7 +92,7 @@ def batch_transcribe(
 
         # Submit, wait for completion, and download results
         batch_result, output_path, error_path = batch.submit_wait_download(
-            dry_run=dry_run
+            dry_run=dry_run,
         )
 
         print(f"\n{'=' * 60}")
