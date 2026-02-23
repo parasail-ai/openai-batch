@@ -38,6 +38,12 @@ def main():
     parser.add_argument(
         "--dry-run", help="Test without making actual API calls", action="store_true"
     )
+    parser.add_argument(
+        "--model", help="Whisper model to use", default="openai/whisper-large-v3"
+    )
+    parser.add_argument(
+        "--dry-run", help="Test without making actual API calls", action="store_true"
+    )
     args = parser.parse_args()
 
     # Resolve directory path
