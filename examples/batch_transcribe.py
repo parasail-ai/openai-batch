@@ -54,9 +54,7 @@ def batch_transcribe(
     # Find audio files (support multiple formats)
     audio_extensions = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mp4", ".webm"}
     audio_files = [
-        p
-        for p in audio_directory.iterdir()
-        if p.is_file() and p.suffix.lower() in audio_extensions
+        p for p in audio_directory.iterdir() if p.is_file() and p.suffix.lower() in audio_extensions
     ]
 
     audio_files.sort()

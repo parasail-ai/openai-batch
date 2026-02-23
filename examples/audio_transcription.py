@@ -32,9 +32,7 @@ def main():
         default="audio_files",
         type=Path,
     )
-    parser.add_argument(
-        "--model", help="Whisper model to use", default="openai/whisper-large-v3"
-    )
+    parser.add_argument("--model", help="Whisper model to use", default="openai/whisper-large-v3")
     parser.add_argument(
         "--dry-run", help="Test without making actual API calls", action="store_true"
     )
@@ -46,9 +44,7 @@ def main():
     # Find audio files
     audio_extensions = {".mp3", ".wav", ".m4a", ".ogg", ".flac", ".mp4", ".webm"}
     audio_files = [
-        p
-        for p in audio_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in audio_extensions
+        p for p in audio_dir.iterdir() if p.is_file() and p.suffix.lower() in audio_extensions
     ]
 
     if not audio_files:
