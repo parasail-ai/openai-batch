@@ -5,10 +5,58 @@ import pytest
 
 import openai_batch
 from openai_batch import batch
+from openai_batch.providers import Provider
 
 
 def test_version():
     assert openai_batch.__version__
+
+
+@pytest.mark.parametrize("input_kind", ["default", "explicit", "retry"])
+def test_submit_uploads_requests_written_to_disk(tmp_path, monkeypatch, input_kind):
+    monkeypatch.chdir(tmp_path)
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        if request.url.path == "/v1/files":
+            if input_kind == "retry" and len(requests) == 1:
+                return httpx.Response(503, json={"error": {"message": "Try again"}})
+            return httpx.Response(200, json={"id": "file-input"})
+        assert request.url.path == "/v1/batches"
+        return httpx.Response(200, json={"id": "batch-test"})
+
+    with openai.OpenAI(
+        api_key="test-key",
+        base_url="https://batch.test/v1",
+        max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(transport)),
+    ) as client:
+
+        class LocalProvider(Provider):
+            def get_client(self):
+                return client
+
+        input_file = "requests.jsonl" if input_kind == "explicit" else None
+        with batch.Batch(submission_input_file=input_file, provider=LocalProvider()) as job:
+            for prompt in ("one", "two"):
+                job.add_to_batch(model="gpt-4", messages=[{"role": "user", "content": prompt}])
+            if input_kind == "retry":
+                with pytest.raises(openai.InternalServerError):
+                    job.submit()
+                assert not job.submission_input_file.closed
+            assert job.submit() == "batch-test"
+            assert job.submission_input_file.closed
+
+    upload, create = requests[-2:]
+    written = next(tmp_path.glob("*.jsonl")).read_bytes()
+    assert written in upload.content
+    if input_kind == "retry":
+        assert len(requests) == 3
+        assert written in requests[0].content
+    inputs = [json.loads(line) for line in written.splitlines()]
+    assert [row["body"]["messages"][0]["content"] for row in inputs] == ["one", "two"]
+    assert json.loads(create.content)["input_file_id"] == "file-input"
 
 
 def test_batch_create_array(tmp_path):

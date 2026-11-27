@@ -278,23 +278,25 @@ class Batch:
         # Get OpenAI client from provider
         client = self.provider.get_client()
 
-        # Close and prepare submission file for reading
-        if isinstance(self.submission_input_file, (TextIOWrapper, BytesIO, str, Path)):
-            if self._should_close:
-                self.submission_input_file.close()
-
-            if isinstance(self.submission_input_file, BytesIO):
-                self.submission_input_file.seek(0)
-                file_content = self.submission_input_file.read()
-            elif isinstance(self.submission_input_file, TextIOWrapper):
-                file_content = self.submission_input_file.read().encode("utf-8")
+        source = self.submission_input_file
+        if isinstance(source, TextIOWrapper) and self._should_close:
+            # Keep the writer open so a failed upload can be retried.
+            source.flush()
+            if source.readable():
+                source.seek(0)
             else:
-                file_content = Path(self.submission_input_file).read_bytes()
+                source = Path(source.name)
 
-            input_file = client.files.create(file=file_content, purpose="batch")
+        if isinstance(source, BytesIO):
+            source.seek(0)
+            file_content = source.read()
+        elif isinstance(source, TextIOWrapper):
+            file_content = source.read().encode("utf-8")
+        elif isinstance(source, (str, Path)):
+            file_content = Path(source).read_bytes()
         else:
-            # File-like object provided by user
-            input_file = client.files.create(file=self.submission_input_file, purpose="batch")
+            file_content = source
+        input_file = client.files.create(file=file_content, purpose="batch")
 
         # Determine the endpoint based on batch type
         if self.batch_type == BatchType.CHAT_COMPLETION:
@@ -320,6 +322,8 @@ class Batch:
         )
 
         self.batch_id = batch.id
+        if self._should_close:
+            self.submission_input_file.close()
         return self.batch_id
 
     def auto_detect_provider(self):
